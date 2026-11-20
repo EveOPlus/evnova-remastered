@@ -35,6 +35,14 @@ foreach ($novaAsset in @('Nova Files', 'Nova Plug-ins', 'Campaigns', 'Remastered
 }
 }
 Copy-Item -LiteralPath (Join-Path $novaRoot 'LICENSE.txt') -Destination $novaPackage -Force
+foreach ($novaNotice in @('CREDITS.md', 'NOTICE.md')) {
+    Copy-Item -LiteralPath (Join-Path $novaRoot $novaNotice) -Destination $novaPackage -Force
+}
+$novaPackageTools = Join-Path $novaPackage 'tools'
+New-Item -ItemType Directory -Path $novaPackageTools -Force | Out-Null
+foreach ($novaSetupFile in @('setup-game-data.ps1', 'game-downloads.json')) {
+    Copy-Item -LiteralPath (Join-Path $novaRoot ('tools/' + $novaSetupFile)) -Destination $novaPackageTools -Force
+}
 $novaLicenses = Join-Path $novaPackage 'licenses'
 New-Item -ItemType Directory -Path $novaLicenses -Force | Out-Null
 $novaDependencyEntry = Get-Content -LiteralPath (Join-Path $novaRoot 'build\release\CMakeCache.txt') |
@@ -61,8 +69,8 @@ Release right mouse: select the highlighted action; center/outside cancels
 Mouse wheel: zoom the world without shrinking the HUD
 Wheel over minimap: zoom radar; wheel in galaxy map: zoom the chart
 System Markets in the radial menu: compare prices; select a port > Auto Dock
-Galaxy map > Pop out: chart only; drag blank space to move, wheel to zoom
-Shift-drag blank chart space to pan; right-click the panel to close
+Galaxy map > Pop out: drag its slim title bar to move, wheel to zoom
+Drag blank chart space to pan; title-bar X or right-click closes the panel
 Shift-click a destination in either map to route; double-press J follows it
 Asteroid radial > Auto-mine: approach, fire mining lasers, scoop the yield
 W: select secondary weapon; hold Left Ctrl: fire selected secondary

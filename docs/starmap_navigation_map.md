@@ -9,8 +9,9 @@ between the world map (`syst` records) and the jump/travel system.
 
 The map also offers **Pop out**, opening a non-modal in-game Navigation panel.
 It shares the map projection, discovery gates, marker assets and route planner.
-It displays only the chart and a thin border: drag blank space to move the
-panel, Shift-drag to pan, wheel to zoom, and right-click to close. Shift-click
+It displays the chart with a 20-pixel title bar: drag the title bar to move the
+panel, drag blank chart space to pan, wheel to zoom, and use the title-bar X
+or right-click to close. Shift-click
 plots the shortest known route. J jumps once; double-J follows the route. The
 panel stays visible and recenters after each system arrival. Mouse gestures
 inside it are consumed before spaceflight steering and radar/world zoom.

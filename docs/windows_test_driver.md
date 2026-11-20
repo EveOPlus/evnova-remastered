@@ -95,12 +95,13 @@ rock to its fragments/yield without confusing recycled slots. These fields
 are read-only and are not pilot-file data. Release on `radial.mine` to start
 the regular controller; its `mine` goal appears at `/probe/automation`.
 
-`pop_out` in the full map opens the chart-only `navigation_panel`, which
-publishes `nav.chart` and `nav.system.<zero-based-id>`.
-`view.navigation_panel` and `navigation_zoom` expose session state. Drag blank
-chart space to move, Shift-drag to pan, wheel to zoom, Shift-click to route,
-J for one jump, double-J within 450 ms to follow the route, and right-click the
-chart to close. Each J press must include a release; holding does not repeat.
+`pop_out` in the full map opens `navigation_panel`, which publishes
+`nav.title`, `nav.close`, `nav.chart` and `nav.system.<zero-based-id>`.
+`view.navigation_panel` and `navigation_zoom` expose session state. Drag the
+slim title bar to move the panel, drag blank chart space to pan, wheel to zoom,
+and Shift-click to route. The title-bar X or right-click closes the panel.
+J makes one jump; double-J within 450 ms follows the route. Each J press must
+include a release; holding does not repeat.
 
 `system_markets` publishes selectable `market.<raw-stellar-id>` headings and
 `auto_dock`, which closes the comparison and starts the normal landing

@@ -14,7 +14,9 @@
 namespace game {
 namespace {
 constexpr SDL_FPoint kSize{348, 278};
-constexpr SDL_FRect kChart{2, 2, 344, 274};
+constexpr SDL_FRect kTitle{2, 2, 344, 20};
+constexpr SDL_FRect kClose{326, 3, 18, 18};
+constexpr SDL_FRect kChart{2, 24, 344, 252};
 
 Placement PanelPlacement(SdlPlatform &platform, GameState &state) {
   const auto window = platform.logical_playfield_size();
@@ -118,7 +120,13 @@ NavigationPanelInput NavigationPanel::Update(SdlPlatform &platform,
     platform.ClearProbeUi();
   } else if (input.primary_clicked) {
     using evnova::util::Contains;
-    if (Contains(kChart, local)) {
+    if (Contains(kClose, local)) {
+      p.visible = false;
+      drag_ = Drag::none;
+      platform.ClearProbeUi();
+    } else if (Contains(kTitle, local)) {
+      drag_ = Drag::window;
+    } else if (Contains(kChart, local)) {
       const auto mapped =
           starmap_detail::BuildMappedSystems(state, View(state), kChart);
       const auto missions = BuildMissionTargetSystems(state);
@@ -134,7 +142,7 @@ NavigationPanelInput NavigationPanel::Update(SdlPlatform &platform,
       const bool shift = platform.IsOriginalKeyCodeHeld(0x2a) ||
                          platform.IsOriginalKeyCodeHeld(0x36);
       if (hit < 0)
-        drag_ = shift ? Drag::chart : Drag::window;
+        drag_ = Drag::chart;
       else if (busy)
         NovaHud_ShowOverlayMessage(state, "Navigation locked during jump.");
       else {
@@ -160,8 +168,7 @@ NavigationPanelInput NavigationPanel::Update(SdlPlatform &platform,
         state.route_map.overlay_visible = false;
         NovaHud_ShowOverlayMessage(state, notice);
       }
-    } else
-      drag_ = Drag::window;
+    }
   }
   input.primary_clicked = false;
   input.primary_held = false;
@@ -181,6 +188,29 @@ void NavigationPanel::Draw(SdlPlatform &platform, GameState &state) {
   using namespace preferences_detail;
   auto *renderer = platform.renderer();
   DrawPanel(renderer, {0, 0, kSize.x, kSize.y});
+  SDL_SetRenderDrawColor(renderer, 32, 45, 63, 255);
+  SDL_RenderFillRect(renderer, &kTitle);
+  NovaText_DrawCentered(platform,
+                        fonts_,
+                        NovaFontFamily::kHelvetica,
+                        12,
+                        kNovaFontStyleRegular,
+                        SDL_Color{183, 201, 220, 255},
+                        4,
+                        kClose.x - 4,
+                        16,
+                        "Navigation");
+  const bool close_hovered =
+      evnova::util::Contains(kClose, platform.mouse_position());
+  SDL_SetRenderDrawColor(renderer,
+                         close_hovered ? 255 : 180,
+                         close_hovered ? 185 : 198,
+                         close_hovered ? 185 : 218,
+                         255);
+  SDL_RenderLine(
+      renderer, kClose.x + 5, kClose.y + 5, kClose.x + 13, kClose.y + 13);
+  SDL_RenderLine(
+      renderer, kClose.x + 13, kClose.y + 5, kClose.x + 5, kClose.y + 13);
   SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
   SDL_RenderFillRect(renderer, &kChart);
   const auto mapped =
@@ -202,6 +232,8 @@ void NavigationPanel::Draw(SdlPlatform &platform, GameState &state) {
   }
   std::vector<ProbeNamedRect> controls;
   controls.emplace_back("nav.chart", placement.ToWindowRect(kChart));
+  controls.emplace_back("nav.title", placement.ToWindowRect(kTitle));
+  controls.emplace_back("nav.close", placement.ToWindowRect(kClose));
   for (const auto &node : mapped) {
     if (Marked(state, node.zero_based_id, missions) &&
         evnova::util::Contains(kChart, node.sx, node.sy))

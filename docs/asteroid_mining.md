@@ -29,9 +29,30 @@ the existing scoop collision path. Session-only `mining_group` identifiers
 propagate to fragments and resource boxes; pool reuse gets a fresh identifier.
 No RNG rolls, spawn quantities, lifetimes, collision rules or save formats
 change. Equipment, ship state, system changes and cargo capacity gate the job;
-manual controls cancel it. The arrival helper disables predictive positional
-lead here because adding it to velocity matching holds a fixed offset ahead
-of a drifting rock instead of converging on it.
+manual controls cancel it.
+
+Long approaches solve for the future meeting point using the target's drift,
+the ship's effective speed and coasting during its turn. The controller steers
+onto that world-space velocity, then latches a braking/velocity-matching phase
+when turnaround drift plus stopping distance reaches the target. This avoids
+both chasing the rock's old location and counting its velocity twice. Cargo
+uses the same interception approach. Pool-target changes and distant wraps
+replan the approach.
+
+Mining starts only inside the close-range envelope with relative speed at or
+below 0.30 pixels/tick. Unguided shots solve their own relative-motion intercept,
+must arrive before expiry, and check the actual degree-rounded firing line
+against an inner asteroid footprint, including the pending turn step. Random
+weapon spread and collision masks remain unchanged. Overlapping fragments
+cause a short reposition so the ship can aim. The original weapon AI and firing
+rules are unchanged; this is input automation rather than a binary bug fix.
+
+Regression checks use the real movement integrator at 0.63, 1 and 2 ticks per
+frame. A crossing-target approach reaches a valid firing position in under
+650 ticks with travelled distance below 115% of its straight-line displacement.
+Checks also cover high closing speed, short-lived shots, large turn steps and
+overlapping fragments. A direct-driver run mined all fragments, collected
+33 tons and finished with no group asteroids or cargo remaining.
 
 The existing renderer wraps asteroids rather than reproducing the original
 deactivate/refill cycle. Its opposite-edge placement formerly landed beyond

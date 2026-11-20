@@ -1,6 +1,6 @@
 # Game data setup
 
-Build from source, or when available extract the whole Windows engine ZIP
+Build from source, or extract the whole Windows engine ZIP
 from the repository's releases, and run `evnova.exe`. If game data is missing, choose **Download
 and Set Up**. Keep the included `tools` folder beside the executable.
 
@@ -62,7 +62,16 @@ to it.
 Release and debug builds and static checks passed on Windows. Cached archive
 installation, original-document retention, reruns, file preservation, checksum
 rejection and archive path checks passed under Windows PowerShell 5.1. The
-first-run screen and its download action were exercised through the test
-driver. Windows Security subsequently quarantined that test executable, so
-the complete in-game setup-to-menu flow remains unverified and prebuilt
-releases are withheld pending investigation. No security exclusions were added.
+complete first-run setup-to-menu flow passed through the direct test driver
+with verified cached archives and an isolated profile; ARPIA2 was installed
+and left disabled by default.
+
+On 20 November 2026, Windows Security reported no threats in the ordinary
+player executable (SHA-256
+`93ded0c433dbcea577172e5ae4da0a93dc57f2e0db034e0f07d6a2acf120dac3`).
+The separate local test-driver build had been quarantined as
+`Trojan:Win32/Bearfoos.A!ml`. Its owner authorized an exact-file exclusion for
+that local test executable so testing could continue. No exclusion was added
+for the ordinary player executable. The driver detection remains unresolved;
+no Microsoft submission was made. Public packages contain the ordinary
+player build, with the test interface disabled.

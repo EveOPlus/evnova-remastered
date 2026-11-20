@@ -139,8 +139,8 @@ those on another page.
 The radial menu still cancels in its center, outside the ring or with Escape.
 
 The floating Navigation panel shares the full map's discovered systems and
-route planner. It shows only the chart with a thin border. Drag empty chart
-space to move the panel, Shift-drag empty space to pan, and use the wheel to
+route planner. A slim title bar moves the panel and has a close button.
+Drag empty chart space to pan, and use the wheel to
 zoom. Click a neighboring system or Shift-click a destination to plot the
 shortest known route. J jumps once; double-J follows the route. The panel stays open and recenters
 after each jump. Right-click the panel to close it. Panel gestures do not start

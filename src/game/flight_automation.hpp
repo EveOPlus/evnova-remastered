@@ -141,6 +141,8 @@ private:
   std::int16_t mining_system_ = -1;
   std::int16_t mining_bank_ = -1;
   int mining_cargo_start_ = 0;
+  int mining_target_key_ = -1;
+  bool mining_final_approach_ = false;
   void TickRoute(const GameState &,
                  std::uint64_t now_ms,
                  FlightInput &,

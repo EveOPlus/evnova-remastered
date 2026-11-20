@@ -171,6 +171,93 @@ std::int16_t LeadWeaponBank(const GameState &state, const Ship &ship) {
   }
   return first_primary;
 }
+
+// Remake guidance only. Earliest positive interception at a constant speed;
+// the velocity is world-relative for travel, shooter-relative for a projectile.
+std::optional<float>
+InterceptTicks(float dx, float dy, float vx, float vy, float speed) {
+  const double a = static_cast<double>(vx) * vx + static_cast<double>(vy) * vy -
+                   static_cast<double>(speed) * speed;
+  const double b =
+      2.0 * (static_cast<double>(dx) * vx + static_cast<double>(dy) * vy);
+  const double c = static_cast<double>(dx) * dx + static_cast<double>(dy) * dy;
+  if (speed <= 0 || c < 1e-6)
+    return std::nullopt;
+  if (std::abs(a) < 1e-6) {
+    if (b < -1e-6)
+      return static_cast<float>(-c / b);
+    return std::nullopt;
+  }
+  const double discriminant = b * b - 4.0 * a * c;
+  if (discriminant < 0)
+    return std::nullopt;
+  const double q = -.5 * (b + std::copysign(std::sqrt(discriminant), b));
+  const double first = q / a;
+  const double second = std::abs(q) > 1e-9 ? c / q : -1;
+  const double result =
+      std::min(first > 0 ? first : std::numeric_limits<double>::max(),
+               second > 0 ? second : std::numeric_limits<double>::max());
+  if (result == std::numeric_limits<double>::max())
+    return std::nullopt;
+  return static_cast<float>(result);
+}
+
+void ApproachMiningTarget(const PlayerShip &ship,
+                          float x,
+                          float y,
+                          float vx,
+                          float vy,
+                          float radius,
+                          float turn,
+                          float thrust,
+                          float speed,
+                          float elapsed_ticks,
+                          bool &final_approach,
+                          FlightInput &input) {
+  const float dx = x - ship.pos_x;
+  const float dy = y - ship.pos_y;
+  const float distance = std::hypot(dx, dy);
+  const float relative_speed = std::hypot(ship.vel_x - vx, ship.vel_y - vy);
+  const float omega = std::max(1.0F, turn) * kDegToRad;
+  const float acceleration = std::max(.001F, thrust);
+  const float braking = relative_speed * kPi / omega +
+                        relative_speed * relative_speed / (2 * acceleration);
+  // Latch the arrival phase so shedding speed cannot re-arm a full-speed burn.
+  // A wrapped asteroid can move far away without changing its pool slot.
+  const float worst_speed = std::max(.1F, speed) + std::hypot(vx, vy);
+  const float reset_distance =
+      2 * (radius + worst_speed * kPi / omega +
+           worst_speed * worst_speed / (2 * acceleration));
+  if (distance > std::max(500.0F, reset_distance))
+    final_approach = false;
+  if (distance <= radius + braking + relative_speed * elapsed_ticks + 15.0F)
+    final_approach = true;
+  if (!final_approach && speed > .1F) {
+    // Account for coasting during the initial turn, then accelerate onto a
+    // world-space intercept course. Do not add target velocity a second time.
+    const float delay =
+        std::abs(AngleDelta(ship.heading, Bearing(dx, dy))) / omega;
+    const float future_dx = dx + (vx - ship.vel_x) * delay;
+    const float future_dy = dy + (vy - ship.vel_y) * delay;
+    if (const auto time = InterceptTicks(future_dx, future_dy, vx, vy, speed)) {
+      const float goal_vx = future_dx / *time + vx;
+      const float goal_vy = future_dy / *time + vy;
+      const float err_x = goal_vx - ship.vel_x;
+      const float err_y = goal_vy - ship.vel_y;
+      if (std::hypot(err_x, err_y) >
+          std::max(kArriveVelocityDeadband, thrust * elapsed_ticks)) {
+        const float desired = Bearing(err_x, err_y);
+        Face(ship.heading, desired, turn, elapsed_ticks, input);
+        if (std::abs(AngleDelta(ship.heading, desired)) <=
+            (turn * elapsed_ticks + 2.0F) * kDegToRad)
+          input.thrust = true;
+      }
+      return;
+    }
+  }
+  FlightAutomationController::MoveToAndStopAt(
+      ship, x, y, radius, turn, thrust, input, elapsed_ticks, vx, vy, false);
+}
 } // namespace
 
 std::optional<std::int16_t>
@@ -514,6 +601,8 @@ bool FlightAutomationController::MineAsteroid(const GameState &state,
       state.asteroid_pool[static_cast<std::size_t>(slot)].mining_group;
   mining_system_ = state.player.current_system_id;
   mining_cargo_start_ = Player_ComputeCargoAndJunkTotal(state);
+  mining_target_key_ = -1;
+  mining_final_approach_ = false;
   deadline_ms_ = now_ms + 180000;
   tap_release_ = true; // release any selection latch inherited from the menu
   return true;
@@ -537,10 +626,40 @@ void FlightAutomationController::TickMining(const GameState &state,
     Fail("Auto-mine stopped: no asteroid scoop.");
     return;
   }
-  const auto *cls = state.scenario.Ship(
-      static_cast<std::int16_t>(state.player.ship_class_id + 0x80));
-  const float turn = cls ? std::round(cls->turn_rate * .1F) : 1.0F;
-  const float thrust = cls ? cls->accel / 10000.0F * 2.0F : .01F;
+  const auto stats = state.stat_cache_valid
+                         ? state.cached_stats
+                         : Outfit_ComputePlayerEffectiveStats(state);
+  const float ionization =
+      state.player.ionization_points > 0
+          ? (state.cached_ionization_capacity < 0
+                 ? .7F
+                 : std::min(.7F,
+                            NovaOutfit_NormalizeIonizationIntensity(
+                                state.player.ionization_points,
+                                state.cached_ionization_capacity)))
+          : 0.0F;
+  const float turn = std::round(stats.turn_raw * .1F * (1.0F - ionization));
+  const float thrust = stats.thrust_raw * .0002F * (1.0F - ionization);
+  const float speed = stats.speed_raw * .01F;
+  const auto approach =
+      [&](int key, float x, float y, float vx, float vy, float radius) {
+        if (key != mining_target_key_) {
+          mining_target_key_ = key;
+          mining_final_approach_ = false;
+        }
+        ApproachMiningTarget(state.player,
+                             x,
+                             y,
+                             vx,
+                             vy,
+                             radius,
+                             turn,
+                             thrust,
+                             speed,
+                             elapsed_ticks,
+                             mining_final_approach_,
+                             input);
+      };
   // Collect existing yield first: it expires, whereas the remaining fragments
   // do not.
   const FreeflightObjectState *cargo = nullptr;
@@ -560,17 +679,12 @@ void FlightAutomationController::TickMining(const GameState &state,
   if (cargo) {
     status_.phase = FlightAutomationPhase::kMove;
     status_.detail = "Scooping asteroid cargo. Steer to cancel.";
-    MoveToAndStopAt(state.player,
-                    cargo->pos_x,
-                    cargo->pos_y,
-                    1.0F,
-                    turn,
-                    thrust,
-                    input,
-                    elapsed_ticks,
-                    cargo->vel_x,
-                    cargo->vel_y,
-                    false);
+    approach(-2 - static_cast<int>(cargo - state.freeflight_objects.data()),
+             cargo->pos_x,
+             cargo->pos_y,
+             cargo->vel_x,
+             cargo->vel_y,
+             1.0F);
     return;
   }
   const AsteroidState *asteroid = nullptr;
@@ -621,34 +735,89 @@ void FlightAutomationController::TickMining(const GameState &state,
   const float firing_distance = std::min(65.0F, reach * .75F);
   status_.phase = FlightAutomationPhase::kMove;
   status_.detail = "Approaching asteroid. Steer to cancel.";
-  MoveToAndStopAt(state.player,
-                  asteroid->target_pos_x,
-                  asteroid->target_pos_y,
-                  20.0F,
-                  turn,
-                  thrust,
-                  input,
-                  elapsed_ticks,
-                  asteroid->target_vel_x,
-                  asteroid->target_vel_y,
-                  false);
+  approach(static_cast<int>(asteroid - state.asteroid_pool.data()),
+           asteroid->target_pos_x,
+           asteroid->target_pos_y,
+           asteroid->target_vel_x,
+           asteroid->target_vel_y,
+           20.0F);
   if (nearest > firing_distance)
     return;
+  if (nearest < 1.0F) {
+    // A fragment can spawn directly on the ship. Create an aiming baseline
+    // instead of waiting forever for a positive projectile intercept time.
+    input.turn_left = input.turn_right = input.thrust = false;
+    MoveToAndStopAt(state.player,
+                    asteroid->target_pos_x + 20.0F,
+                    asteroid->target_pos_y,
+                    1.0F,
+                    turn,
+                    thrust,
+                    input,
+                    elapsed_ticks,
+                    asteroid->target_vel_x,
+                    asteroid->target_vel_y,
+                    false);
+    return;
+  }
   Ship target;
   target.pos_x = asteroid->target_pos_x;
   target.pos_y = asteroid->target_pos_y;
   target.vel_x = asteroid->target_vel_x;
   target.vel_y = asteroid->target_vel_y;
-  const float desired = static_cast<float>(NovaAi_AimWeaponPredictive(
-                            state, state.player, target, mining_bank_)) *
-                        kDegToRad;
-  if (std::hypot(state.player.vel_x - asteroid->target_vel_x,
-                 state.player.vel_y - asteroid->target_vel_y) < .5F) {
-    input.turn_left = input.turn_right = input.thrust = false;
-    Face(state.player.heading, desired, turn, elapsed_ticks, input);
+  float desired = static_cast<float>(NovaAi_AimWeaponPredictive(
+                      state, state.player, target, mining_bank_)) *
+                  kDegToRad;
+  const float rel_x = target.vel_x - state.player.vel_x;
+  const float rel_y = target.vel_y - state.player.vel_y;
+  if (std::hypot(rel_x, rel_y) > kSettledSpeed)
+    return;
+  const float dx = target.pos_x - state.player.pos_x;
+  const float dy = target.pos_y - state.player.pos_y;
+  float aim_x = dx;
+  float aim_y = dy;
+  if (weapon->weapon_mode_code == -1 || weapon->weapon_mode_code == 7) {
+    const auto time =
+        InterceptTicks(dx, dy, rel_x, rel_y, weapon->projectile_speed * .01F);
+    if (!time || *time > weapon->lifetime_ticks)
+      return;
+    aim_x += rel_x * *time;
+    aim_y += rel_y * *time;
+    desired = Bearing(aim_x, aim_y);
   }
-  if (std::abs(AngleDelta(state.player.heading, desired)) <=
-      std::max(2.0F, turn * elapsed_ticks) * kDegToRad) {
+  input.turn_left = input.turn_right = input.thrust = false;
+  Face(state.player.heading, desired, turn, elapsed_ticks, input);
+  // A frame-sized angular tolerance alone fires wide on fast-turning ships.
+  // Require the actual outgoing heading to cross the rock's inner footprint.
+  const float angle = std::abs(AngleDelta(state.player.heading, desired));
+  const float next_heading =
+      state.player.heading +
+      (static_cast<int>(input.turn_right) - static_cast<int>(input.turn_left)) *
+          turn * elapsed_ticks * kDegToRad;
+  const float next_angle = std::abs(AngleDelta(next_heading, desired));
+  const float corridor =
+      std::clamp(asteroid->collision_radius_px * .4F, 2.0F, 8.0F);
+  const float tolerance = std::asin(
+      std::min(1.0F, corridor / std::max(1.0F, std::hypot(aim_x, aim_y))));
+  bool on_target = std::max(angle, next_angle) <= tolerance;
+  if (weapon->weapon_mode_code == -1 || weapon->weapon_mode_code == 7) {
+    const auto crosses_rock = [&](float heading) {
+      heading = std::round(heading / kDegToRad) * kDegToRad;
+      const float shot_x =
+          std::sin(heading) * weapon->projectile_speed * .01F - rel_x;
+      const float shot_y =
+          -std::cos(heading) * weapon->projectile_speed * .01F - rel_y;
+      const float speed_sq = shot_x * shot_x + shot_y * shot_y;
+      if (speed_sq <= 1e-6F)
+        return false;
+      const float time = (dx * shot_x + dy * shot_y) / speed_sq;
+      return time > 0 && time <= weapon->lifetime_ticks &&
+             std::hypot(dx - shot_x * time, dy - shot_y * time) <= corridor;
+    };
+    on_target = on_target && crosses_rock(state.player.heading) &&
+                crosses_rock(next_heading);
+  }
+  if (on_target) {
     status_.phase = FlightAutomationPhase::kEngage;
     status_.detail = "Mining asteroid. Steer to cancel.";
     if ((weapon->flags & 2U) != 0)

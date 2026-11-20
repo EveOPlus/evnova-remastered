@@ -61,18 +61,18 @@ GameState AutomationState() {
 }
 } // namespace
 
-TEST_CASE("auto-mine selects mining secondary, gates range and collects its "
-          "own yield",
-          "[mining][automation]") {
+namespace {
+GameState MiningState() {
   auto state = AutomationState();
   state.scenario.ships.resize(1);
   auto &cls = state.scenario.ships[0];
   cls.cargo_holds = 100;
   cls.turn_rate = 40;
   cls.accel = 500;
+  cls.speed = 400;
   state.player.ship_class_id = 0;
   state.player.armor_points = 100;
-  state.player.active_weapon_bank_slot = -1;
+  state.player.active_weapon_bank_slot = 0;
   state.scenario.outfits.resize(1);
   state.scenario.outfits[0].mod_type = 0x1f;
   state.inventory.outfit_owned_count[0] = 1;
@@ -84,12 +84,96 @@ TEST_CASE("auto-mine selects mining secondary, gates range and collects its "
   weapon.ammo_type = -1;
   weapon.range_scalar = 120;
   weapon.projectile_speed = 600;
+  weapon.lifetime_ticks = 20;
   state.player.weapon_banks[0].mounted = 6;
   auto &rock = state.asteroid_pool[0];
   rock.active = true;
   rock.mining_group = 42;
-  rock.target_pos_y = -300;
+  rock.target_pos_y = -600;
   rock.integrity = 60;
+  return state;
+}
+} // namespace
+
+TEST_CASE("auto-mine settles before firing and checks projectile reach",
+          "[mining][automation]") {
+  auto state = MiningState();
+  auto &rock = state.asteroid_pool[0];
+  rock.target_pos_y = -45;
+  SECTION("fast approach brakes even while pointing directly at the rock") {
+    state.player.vel_y = -4;
+  }
+  SECTION("short-lived mining shots cannot reach the target yet") {
+    state.scenario.weapons[0].lifetime_ticks = 2;
+  }
+  SECTION("a coarse turn step does not allow a shot outside the rock") {
+    state.scenario.ships[0].turn_rate = 180;
+    state.player.heading = .28F;
+  }
+  FlightAutomationController controller;
+  REQUIRE(controller.MineAsteroid(state, 0, 0));
+  FlightInput input;
+  controller.Tick(state, 1, input);
+  CHECK_FALSE(input.fire_secondary);
+}
+
+TEST_CASE("auto-mine intercepts a crossing asteroid and fires into its path",
+          "[mining][automation]") {
+  for (const float dt : {.63F, 1.0F, 2.0F}) {
+    auto state = MiningState();
+    auto &rock = state.asteroid_pool[0];
+    rock.target_vel_x = 1;
+    FlightAutomationController controller;
+    REQUIRE(controller.MineAsteroid(state, 0, 0));
+    bool fired = false;
+    float path_length = 0;
+    float ticks = 0;
+    for (; ticks < 1800; ticks += dt) {
+      FlightInput input;
+      controller.Tick(state, static_cast<std::uint64_t>(ticks * 33), input, dt);
+      if (input.fire_secondary) {
+        const float dx = rock.target_pos_x - state.player.pos_x;
+        const float dy = rock.target_pos_y - state.player.pos_y;
+        const float shot_heading = std::round(state.player.heading * 180.0F /
+                                              3.14159265358979323846F) *
+                                   3.14159265358979323846F / 180.0F;
+        const float vx =
+            std::sin(shot_heading) * 6 + state.player.vel_x - rock.target_vel_x;
+        const float vy = -std::cos(shot_heading) * 6 + state.player.vel_y -
+                         rock.target_vel_y;
+        const float time = (dx * vx + dy * vy) / (vx * vx + vy * vy);
+        CHECK(time > 0);
+        CHECK(time <= 20);
+        CHECK(std::hypot(dx - vx * time, dy - vy * time) < 8);
+        CHECK(std::hypot(state.player.vel_x - rock.target_vel_x,
+                         state.player.vel_y - rock.target_vel_y) <= .3F);
+        fired = true;
+        break;
+      }
+      const float before_x = state.player.pos_x;
+      const float before_y = state.player.pos_y;
+      (void)NovaPlayer_IntegrateMovement(
+          state.player, input, state.scenario.ships[0], dt);
+      path_length += std::hypot(state.player.pos_x - before_x,
+                                state.player.pos_y - before_y);
+      rock.target_pos_x += rock.target_vel_x * dt;
+      rock.target_pos_y += rock.target_vel_y * dt;
+    }
+    CAPTURE(dt, ticks, path_length, state.player.pos_x, state.player.pos_y);
+    CHECK(fired);
+    CHECK(ticks < 650);
+    CHECK(path_length <
+          1.15F * std::hypot(state.player.pos_x, state.player.pos_y));
+  }
+}
+
+TEST_CASE("auto-mine selects mining secondary, gates range and collects its "
+          "own yield",
+          "[mining][automation]") {
+  auto state = MiningState();
+  state.player.active_weapon_bank_slot = -1;
+  auto &rock = state.asteroid_pool[0];
+  rock.target_pos_y = -300;
   FlightAutomationController controller;
   REQUIRE(controller.MineAsteroid(state, 0, 0));
   FlightInput input;
@@ -139,6 +223,26 @@ TEST_CASE("auto-mine selects mining secondary, gates range and collects its "
   CHECK_FALSE(input.fire_secondary);
   state.inventory.outfit_owned_count[0] = 0;
   CHECK_FALSE(controller.MineAsteroid(state, 0, 11));
+}
+
+TEST_CASE("auto-mine makes space to aim at an overlapping fragment",
+          "[mining][automation]") {
+  auto state = MiningState();
+  state.asteroid_pool[0].target_pos_y = 0;
+  FlightAutomationController controller;
+  REQUIRE(controller.MineAsteroid(state, 0, 0));
+  bool fired = false;
+  for (int tick = 0; tick < 300; ++tick) {
+    FlightInput input;
+    controller.Tick(state, static_cast<std::uint64_t>(tick * 33), input);
+    if (input.fire_secondary) {
+      fired = true;
+      break;
+    }
+    (void)NovaPlayer_IntegrateMovement(
+        state.player, input, state.scenario.ships[0], 1.0F);
+  }
+  CHECK(fired);
 }
 
 TEST_CASE(

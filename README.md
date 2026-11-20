@@ -11,10 +11,10 @@ ship, planet and interface designs. Upstream history and the original
 
 ## Playing on Windows
 
-Build the game using the [Windows guide](docs/local_windows_build.md).
-Prebuilt releases are currently withheld while a Windows Security detection
-on the local test-driver executable is investigated. The detection has not
-been established as a false positive.
+Download the Windows community preview from
+[Releases](https://github.com/EveOPlus/evnova-remastered/releases), or build
+the game using the [Windows guide](docs/local_windows_build.md).
+Extract the whole ZIP before starting the game.
 
 Open `evnova.exe`. On a new installation, **Download and Set Up**
 fetches Community Edition and ARPIA2 from
