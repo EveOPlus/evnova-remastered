@@ -229,6 +229,64 @@ TEST_CASE("stellar government ScanMask gates hypergate access") {
   CHECK(game::NovaTravel_PlayerMeetsStellarAccess(state, 0x80));
 }
 
+TEST_CASE(
+    "active mission destinations grant landing despite local reputation") {
+  GameState state;
+  state.scenario.systems.resize(14);
+  state.scenario.governments.resize(14);
+  state.scenario.stellars.resize(172);
+  state.player.current_system_id = 13;
+  state.system_reputation.assign(14, 0);
+  state.system_reputation[13] = -11;
+  auto &merrol = state.scenario.stellars[43];
+  merrol.is_defined = true;
+  merrol.system_id = 13;
+  merrol.government_id = 13;
+  merrol.min_status = -10;
+  auto &mission = state.active_missions[0];
+  mission.travel_stellar_id = -1;
+  mission.return_stellar_id = -1;
+
+  CHECK_FALSE(game::NovaTravel_PlayerMeetsStellarAccess(state, 171));
+  state.active_mission_runtime_flags[0].is_active = true;
+  CHECK_FALSE(game::NovaTravel_PlayerMeetsStellarAccess(state, 171));
+
+  SECTION("pickup destination") { mission.travel_stellar_id = 43; }
+  SECTION("return destination") { mission.return_stellar_id = 43; }
+
+  CHECK(game::NovaTravel_PlayerMeetsStellarAccess(state, 171));
+  state.active_mission_runtime_flags[0].is_active = false;
+  CHECK_FALSE(game::NovaTravel_PlayerMeetsStellarAccess(state, 171));
+  CHECK(state.system_reputation[13] == -11);
+}
+
+TEST_CASE(
+    "mission landing clearance does not confuse resource ids with slots") {
+  GameState state;
+  state.scenario.systems.resize(1);
+  state.scenario.governments.resize(1);
+  state.scenario.stellars.resize(129);
+  state.player.current_system_id = 0;
+  state.system_reputation.assign(1, 0);
+  state.system_reputation[0] = -20;
+  auto &stellar = state.scenario.stellars[0];
+  stellar.is_defined = true;
+  stellar.system_id = 0;
+  stellar.government_id = 0;
+  stellar.min_status = 0;
+  state.active_mission_runtime_flags[0].is_active = true;
+  auto &mission = state.active_missions[0];
+  mission.travel_stellar_id = 128; // A different stellar, resource id 256.
+  mission.return_stellar_id = -1;
+  CHECK_FALSE(game::NovaTravel_PlayerMeetsStellarAccess(state, 128));
+  mission.travel_stellar_id = 0;
+  CHECK(game::NovaTravel_PlayerMeetsStellarAccess(state, 128));
+  CHECK_FALSE(game::NovaTravel_PlayerMeetsStellarAccess(state, -1));
+  CHECK_FALSE(game::NovaTravel_PlayerMeetsStellarAccess(state, 127));
+  state.player.current_system_id = 1;
+  CHECK_FALSE(game::NovaTravel_PlayerMeetsStellarAccess(state, 128));
+}
+
 TEST_CASE("restricted stellar transfer uses the destination emergence angle") {
   GameState state;
   state.scenario.systems.resize(2);

@@ -63,6 +63,22 @@ directly. The travel/landed context (`GameState::travel.selected_stellar_id`,
 taking a landed stellar rebase at the boundary. Comparing the two spaces
 directly breaks ReturnStel gates (it silently broke tutorial-001 completion).
 
+The same conversion applies to landing clearance in `0x00459950`:
+`NovaTravel_PlayerMeetsStellarAccess` compares the requested resource id minus
+0x80 with both active-mission destinations. Either destination grants access
+despite low local reputation. Inactive missions and unrelated destinations do
+not. This is original behavior, not a reputation reset or compatibility fix.
+
+Merrol illustrates why the exception matters. Stock stellar 171 belongs to the
+Rebellion but is in Federation system 141 (Aldebaran); its MinStatus is -10.
+Vell-os repeat missions 143 and 145 reward the Rebellion by +2 and reduce
+Federation-system reputation by 1. A return delivery to Merrol (active stellar
+slot 43) must therefore still permit landing below -10. Reminder mission 819
+has no destination and does not itself grant clearance. At story bit b358,
+the next mission is 149, offered at New England's bar (stellar 138); repeating
+the Merrol freight jobs does not advance that bit. Evidence: shipped mission,
+stellar and system resources; `0x00440410` and `0x00459950` decompilation.
+
 ## Random mission destination validity (0x00468b50)
 
 A randomly selected destination must satisfy the Bible rule: far enough from the

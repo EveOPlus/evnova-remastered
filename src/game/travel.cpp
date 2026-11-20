@@ -2233,15 +2233,16 @@ bool NovaTravel_PlayerMeetsStellarAccess(const GameState &state,
     }
   }
   if (!eligible) {
+    const auto stellar_slot = static_cast<std::int16_t>(stellar_id - 0x80);
     for (std::size_t slot = 0; slot < GameState::kMaxActiveMissions; ++slot) {
       if (!state.active_mission_runtime_flags[slot].is_active) {
         continue;
       }
-      // Ghidra compares the travel slot against the active mission's two
-      // stellar fields (misn -0x6d / -0x69, the Visit/Return ids).
+      // Both operands in 0x00459950 are zero-based stellar slots; the
+      // public travel API takes a resource id (slot + 0x80).
       const ActiveMission &mission = state.active_missions[slot];
-      if (mission.travel_stellar_id == stellar_id ||
-          mission.return_stellar_id == stellar_id) {
+      if (mission.travel_stellar_id == stellar_slot ||
+          mission.return_stellar_id == stellar_slot) {
         eligible = true;
         break;
       }
@@ -2257,6 +2258,8 @@ bool NovaTravel_PlayerMeetsStellarAccess(const GameState &state,
 
 // @port 0x00459950 95% gameplay,ui
 // Ghidra 0x00459950 NovaUi_UpdateTravelEngagementProgress.
+// Access checks run in NovaTravel_PlayerMeetsStellarAccess, including the
+// active-mission Visit/Return destination override of local reputation.
 void NovaTravel_UpdateEngagementProgress(GameState &state) {
   constexpr std::int16_t kArmedTimer = 0x2ee;
   constexpr std::int16_t kRequestAxisRange = 0xfa; // 250
