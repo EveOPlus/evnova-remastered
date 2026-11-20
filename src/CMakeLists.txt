@@ -25,7 +25,10 @@ add_library(evnova_runtime
     game/landed_store.cpp
     game/locate_data_dialog.cpp
     game/mission.cpp
+    game/mission_narration.cpp
+    game/movie_player.cpp
     game/mission_script.cpp
+    game/mouse_controls.cpp
     game/mission_text.cpp
     game/mission_trace.cpp
     game/mission_world.cpp
@@ -44,6 +47,8 @@ add_library(evnova_runtime
     game/escort_commands.cpp
     game/escort_formation.cpp
     game/preferences_extra.cpp
+    game/remastered_graphics.cpp
+    game/sprite_enhancement.cpp
     game/freeflight_objects.cpp
     game/flight_automation.cpp
     game/negotiation_dialog.cpp
@@ -73,8 +78,11 @@ add_library(evnova_runtime
     game/ship_ai_state.cpp
     game/ship_ai_weapons.cpp
     game/starmap.cpp
+    game/starmap_route.cpp
     game/starmap_render.cpp
     game/trade_center.cpp
+    game/system_markets.cpp
+    game/navigation_panel.cpp
     game/sprite_world.cpp
     game/sprite_mask.cpp
     game/targeting.cpp
@@ -101,13 +109,15 @@ target_include_directories(evnova_runtime PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_include_directories(evnova_runtime PRIVATE SYSTEM
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 target_link_libraries(evnova_runtime PUBLIC SDL3::SDL3 SDL3_ttf::SDL3_ttf fmt::fmt)
+target_link_libraries(evnova_runtime PRIVATE ZLIB::ZLIB)
 
-# The probe's POSIX socket server is the only non-portable runtime piece;
-# compile the no-op transport when it is disabled so the game-side call sites
-# stay compiled and inert (see docs/probe_harness.md).
+# Compile the no-op transport when the optional test driver is disabled.
 if(EVNOVA_ENABLE_PROBE)
     target_sources(evnova_runtime PRIVATE probe_server.cpp)
     target_compile_definitions(evnova_runtime PUBLIC EVNOVA_ENABLE_PROBE=1)
+    if(WIN32)
+        target_link_libraries(evnova_runtime PRIVATE ws2_32)
+    endif()
 else()
     target_sources(evnova_runtime PRIVATE probe_server_stub.cpp)
     target_compile_definitions(evnova_runtime PUBLIC EVNOVA_ENABLE_PROBE=0)
@@ -139,7 +149,7 @@ if(EVNOVA_ENABLE_PCH)
     endif()
 endif()
 
-add_executable(evnova main.cpp)
+add_executable(evnova WIN32 main.cpp)
 target_link_libraries(evnova PRIVATE evnova_runtime)
 if(MSVC)
     target_compile_options(evnova PRIVATE /wd4244 /wd4267)

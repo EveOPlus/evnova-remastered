@@ -1,4 +1,5 @@
 #include "sprite_world.hpp"
+#include "sprite_enhancement.hpp"
 
 #include "../brgr_archive.hpp"
 #include "../cicn_image.hpp"
@@ -27,7 +28,8 @@ namespace {
 bool UploadSheetTextures(SDL_Renderer *renderer,
                          const RleSpriteSheet &sheet,
                          SpriteAsset &out,
-                         bool upload_white_silhouettes = false) {
+                         bool upload_white_silhouettes = false,
+                         bool retain_detail_source = false) {
   out.frame_count = static_cast<int>(sheet.frames.size());
   out.tile_width = sheet.width;
   out.tile_height = sheet.height;
@@ -58,8 +60,17 @@ bool UploadSheetTextures(SDL_Renderer *renderer,
     }
     // Centre anchor (Ghidra SpriteFrame anchor fields +0x2a/+0x2c for a frame
     // built from a full rect: the frame's centre is the natural anchor point).
-    out.frames.push_back(SpriteFrame{
-        std::move(texture), std::move(white_silhouette), anchor_x, anchor_y});
+    std::shared_ptr<const SpriteDetailSource> detail_source;
+    if (retain_detail_source && sheet.width <= kSpriteDetailMaxSize &&
+        sheet.height <= kSpriteDetailMaxSize) {
+      detail_source = std::make_shared<SpriteDetailSource>(
+          SpriteDetailSource{sheet.width, sheet.height, frame.rgba_pixels});
+    }
+    out.frames.push_back(SpriteFrame{std::move(texture),
+                                     std::move(white_silhouette),
+                                     anchor_x,
+                                     anchor_y,
+                                     std::move(detail_source)});
   }
   return !out.frames.empty();
 }
@@ -233,7 +244,8 @@ std::unique_ptr<SpriteAsset> SpriteAsset::LoadSpin(SDL_Renderer *renderer,
   // asteroids, shots, freeflight) use it as the fog-coloured mask for the
   // distance fog (SpriteDrawOptions.fog_murk). Ship sheets already do this via
   // LoadSheet; spin sets need it for the same two-pass fog draw.
-  if (!UploadSheetTextures(renderer, *sheet, *asset, true)) {
+  if (!UploadSheetTextures(
+          renderer, *sheet, *asset, true, spin_id >= 1000 && spin_id < 3000)) {
     NovaLog::Warn("spin sprite {}: texture upload failed", spin_id);
     return nullptr;
   }
@@ -241,7 +253,8 @@ std::unique_ptr<SpriteAsset> SpriteAsset::LoadSpin(SDL_Renderer *renderer,
 }
 
 std::unique_ptr<SpriteAsset> SpriteAsset::LoadSheet(SDL_Renderer *renderer,
-                                                    std::uint16_t sheet_id) {
+                                                    std::uint16_t sheet_id,
+                                                    bool retain_detail_source) {
   const auto sheet_data = NovaResource_Load(kResourceTypeRleSheet16, sheet_id);
   if (!sheet_data) {
     NovaLog::Warn("sprite sheet: no rl.x91D sheet {}", sheet_id);
@@ -253,7 +266,8 @@ std::unique_ptr<SpriteAsset> SpriteAsset::LoadSheet(SDL_Renderer *renderer,
     return nullptr;
   }
   auto asset = std::make_unique<SpriteAsset>();
-  if (!UploadSheetTextures(renderer, *sheet, *asset, true)) {
+  if (!UploadSheetTextures(
+          renderer, *sheet, *asset, true, retain_detail_source)) {
     NovaLog::Warn("sprite sheet {}: texture upload failed", sheet_id);
     return nullptr;
   }
@@ -675,25 +689,53 @@ void DrawSprite(SDL_Renderer *renderer,
   // rotation frames instead of clamping onto the last frame.
   const int resolved = frame < 0 ? 0 : frame % std::max(1, asset.frame_count);
   const SpriteFrame &sf = asset.frames[static_cast<std::size_t>(resolved)];
+  const auto [ax, ay] =
+      (opts.anchor_x && opts.anchor_y)
+          ? std::pair<float, float>{*opts.anchor_x, *opts.anchor_y}
+          : std::pair<float, float>{sf.anchor_x, sf.anchor_y};
+  // Avoid constructing enhanced textures for offscreen ships and stellars.
+  const auto pos = Sprite_AnchorToScreen(world_x,
+                                         world_y,
+                                         camera_world_x,
+                                         camera_world_y,
+                                         viewport_w,
+                                         viewport_h,
+                                         ax,
+                                         ay,
+                                         opts.scale,
+                                         opts.wrap);
+  if (pos.screen_x >= static_cast<float>(viewport_w) ||
+      pos.screen_y >= static_cast<float>(viewport_h) ||
+      pos.screen_x + static_cast<float>(asset.tile_width) * opts.scale <=
+          0.0F ||
+      pos.screen_y + static_cast<float>(asset.tile_height) * opts.scale <=
+          0.0F ||
+      opts.alpha_mod <= 0.0F) {
+    return;
+  }
+  const auto *detail = opts.detail_cache
+                           ? opts.detail_cache->Get(renderer, sf.detail_source)
+                           : nullptr;
   const SdlTexture *texture =
-      opts.white_silhouette ? sf.white_silhouette.get() : sf.texture.get();
+      detail ? (opts.white_silhouette ? detail->silhouette.get()
+                                      : detail->color.get())
+             : (opts.white_silhouette ? sf.white_silhouette.get()
+                                      : sf.texture.get());
   if (texture == nullptr) {
     return;
   }
   // The white-silhouette draw is the emergence flash, which sets fog_murk 0;
   // never use the silhouette as its own fog mask.
   const SdlTexture *fog_mask =
-      opts.white_silhouette ? nullptr : sf.white_silhouette.get();
+      opts.white_silhouette
+          ? nullptr
+          : (detail ? detail->silhouette.get() : sf.white_silhouette.get());
   const TintScope tint_scope(*texture, opts.tint_rgb5);
   // Anchor-aware placement: align the frame's anchor (or the opts override) to
   // the world position -- the genuine Sprite_SetPositionFromCurrentFrameAnchor
   // math. For tile/sheet frames the stored anchor is the frame centre, so this
   // draws centred exactly as before; a caller providing opts.anchor_* (e.g. a
   // shot's gun-fire point) gets the real anchor alignment instead.
-  const auto [ax, ay] =
-      (opts.anchor_x && opts.anchor_y)
-          ? std::pair<float, float>{*opts.anchor_x, *opts.anchor_y}
-          : std::pair<float, float>{sf.anchor_x, sf.anchor_y};
   BlitFrame(renderer,
             *texture,
             fog_mask,

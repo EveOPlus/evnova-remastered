@@ -27,7 +27,9 @@ class SdlPlatform;
 class SdlTexture;
 struct SDL_Renderer;
 
+#include "remastered_graphics.hpp"
 #include "scenario_data.hpp"
+#include "sprite_enhancement.hpp"
 #include "sprite_world.hpp"
 #include "util/placement.hpp"
 
@@ -167,6 +169,10 @@ public:
   // when shorter than 0x30, and only considers sprites whose Strength state is
   // alive; approximated here with the loaded spin set's tile extent
   // (TODO(decomp)).
+  std::int16_t PickAsteroidAt(SdlPlatform &platform,
+                              const GameState &state,
+                              float rx,
+                              float ry);
   std::int16_t PickStellarAt(SdlPlatform &platform,
                              const GameState &state,
                              float rx,
@@ -257,6 +263,8 @@ private:
   };
 
   std::array<AmbientStar, 20> ambient_stars_{};
+  RemasteredGraphics remastered_;
+  SpriteEnhancementCache sprite_details_;
 
   // Shared spin-sprite asset cache (stellar +1000, weapon shot +3000, star
   // field 700 are all just different spin resource ids into the one store).

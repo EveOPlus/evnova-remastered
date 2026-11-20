@@ -35,6 +35,8 @@ class SdlTexture;
 namespace game {
 struct SpriteAsset;
 struct SpriteDrawOptions;
+struct SpriteDetailSource;
+class SpriteEnhancementCache;
 
 // One decoded frame of a sprite set: its SDL texture plus the frame-local
 // anchor point (in pixels, measured from the frame's top-left). This mirrors
@@ -55,6 +57,7 @@ struct SpriteFrame {
   // the centred case by the loaders unless set otherwise.
   float anchor_x = 0.0F;
   float anchor_y = 0.0F;
+  std::shared_ptr<const SpriteDetailSource> detail_source = nullptr;
 };
 
 // A decoded, SDL-uploaded set of frames (one texture per frame). This is the
@@ -82,7 +85,9 @@ struct SpriteAsset {
   // Loads a bare rl\x91D sheet where every frame is a full image (ship
   // rotation / engine-glow frames). Returns null on missing/malformed data.
   [[nodiscard]] static std::unique_ptr<SpriteAsset>
-  LoadSheet(SDL_Renderer *renderer, std::uint16_t sheet_id);
+  LoadSheet(SDL_Renderer *renderer,
+            std::uint16_t sheet_id,
+            bool retain_detail_source = false);
 
   // Loads a run of consecutive `cicn` color-icon resources as one frame set:
   // `first_id`, `first_id+1`, ..., `first_id+count-1` each decode to one frame
@@ -273,6 +278,7 @@ struct SpriteDrawOptions {
   // tiny 5x5px star tiles upscaled so they read as soft glows rather than
   // chunky squares (matches the original's smooth sprite scaling draw-proc).
   bool linear_scale = false;
+  SpriteEnhancementCache *detail_cache = nullptr;
   // Effective system murk percent (System_GetEffectiveMurkPercent, 0-100).
   // When > 0 the sprite is distance-fogged toward the system space/background
   // colour, mirroring Frame_UpdateSpriteDistanceIntensity (0x00438db0) and the

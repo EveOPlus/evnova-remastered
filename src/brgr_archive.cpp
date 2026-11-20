@@ -46,7 +46,7 @@ using evnova::util::ReadLe32;
 // Container layout (little-endian):
 //   [0x00] 'BRGR'
 //   [0x08] descriptor-blob size
-//   [0x0c] blob: [u32 1][u32 1][u32 entry_count]
+//   [0x0c] blob: [u32 group_count][u32 first_entry_id][u32 entry_count]
 //          then entry_count * 12-byte entries: [u32 offset][u32 size][u32 name]
 //          then the names area ("resource.map" lives here for every archive).
 // Each entry is a data region inside the archive file.
@@ -55,8 +55,8 @@ using evnova::util::ReadLe32;
 //   [u32 type_dir_offset][u32 type_count]
 //   type entries (12 bytes): [u32 type_code][u32 records_offset][u32 count]
 //   records (0x10a bytes): [u32 index][u32 type_code][u16 res_id][name...]
-// A record's index is 1-based into the container entry table, so its payload
-// is entries[index - 1].
+// A record's index is relative to the group's first_entry_id (usually 1).
+// Ghidra 0x00501740 resolves it by subtracting that base before indexing.
 // ---------------------------------------------------------------------------
 
 constexpr std::size_t kBrgrBlobOffset = 0x0c;
@@ -141,6 +141,8 @@ ParseBrgrArchive(std::vector<std::byte> bytes,
   }
   const auto entry_count =
       static_cast<std::size_t>(ReadLe32(archive.bytes, kBrgrBlobOffset + 8));
+  const auto first_entry_id =
+      static_cast<std::size_t>(ReadLe32(archive.bytes, kBrgrBlobOffset + 4));
   const auto entries_begin = kBrgrBlobOffset + 12;
   if (entry_count == 0 || entry_count > (blob_size - 12) / kBrgrEntrySize) {
     NovaLog::Warn("BRGR archive has an invalid entry count: {}", path.string());
@@ -218,7 +220,8 @@ ParseBrgrArchive(std::vector<std::byte> bytes,
         const auto index =
             static_cast<std::size_t>(ReadBe32(archive.bytes, record_offset));
         const auto resource_id = ReadBe16(archive.bytes, record_offset + 8);
-        if (index == 0 || index - 1 >= archive.entries.size()) {
+        if (index < first_entry_id ||
+            index - first_entry_id >= archive.entries.size()) {
           continue;
         }
         // Record name is a NUL-terminated C string at [0x0a] of the 0x10a-byte
@@ -239,8 +242,10 @@ ParseBrgrArchive(std::vector<std::byte> bytes,
             record_name.resize(nul);
           }
         }
-        archive.records.push_back(
-            {type_code, resource_id, index - 1, std::move(record_name)});
+        archive.records.push_back({type_code,
+                                   resource_id,
+                                   index - first_entry_id,
+                                   std::move(record_name)});
       }
     }
     return archive;
@@ -551,6 +556,10 @@ private:
          EnumerateArchiveFiles(BundledPluginDirectory(*install_root))) {
       OpenArchive(path);
     }
+    if (const auto campaign = NovaPaths::CampaignPluginDirectory()) {
+      for (const auto &path : EnumerateArchiveFiles(*campaign))
+        OpenArchive(path);
+    }
     const std::size_t bundled_plugin_count =
         archives_.size() - core_count - files_count;
     // User-installed plug-ins live under the writable support folder and load
@@ -631,6 +640,8 @@ NovaResource_LocateFile(const std::string &file_name) {
     directories.push_back(*support_plugins);
   }
   if (const auto install_root = NovaPaths::InstallRoot()) {
+    if (const auto campaign = NovaPaths::CampaignPluginDirectory())
+      directories.push_back(*campaign);
     directories.push_back(BundledPluginDirectory(*install_root));
     directories.push_back(*install_root / "Nova Files");
   }

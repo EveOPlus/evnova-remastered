@@ -1,5 +1,6 @@
 #include "flight_automation.hpp"
 
+#include "outfit.hpp"
 #include "ship_ai.hpp"
 #include "travel.hpp"
 #include "weapon.hpp"
@@ -8,6 +9,7 @@
 #include <cctype>
 #include <charconv>
 #include <cmath>
+#include <limits>
 
 namespace game {
 namespace {
@@ -309,6 +311,36 @@ bool FlightAutomationController::DestroyShip(const GameState &state,
   return true;
 }
 
+bool FlightAutomationController::AssistBlockedJump(const GameState &state,
+                                                   std::uint64_t now_ms) {
+  if (!state.player.is_active || state.travel.engaging ||
+      state.player.hyperspace_jump_timer > 0 ||
+      NovaAiShip_IsDisabled(state, state.player) ||
+      state.player.fuel_points < kJumpFuelCost ||
+      !NovaTravel_CanStartJump(state) || NovaTravel_PlayerInJumpRange(state))
+    return false;
+  const auto &travel = state.travel;
+  const auto *system = state.scenario.System(
+      static_cast<std::int16_t>(state.player.current_system_id + 0x80));
+  if (!system || travel.starmap_destination_system_id < 0 ||
+      travel.travel_slot < 0 ||
+      static_cast<std::size_t>(travel.travel_slot) >= system->links.size())
+    return false;
+  const auto link = system->links[static_cast<std::size_t>(travel.travel_slot)];
+  if (link < 0x80 || NovaSystem_ResolveVisibleForTravel(
+                         state, static_cast<std::int16_t>(link - 0x80)) !=
+                         travel.starmap_destination_system_id)
+    return false;
+  target_id_ = travel.starmap_destination_system_id;
+  status_ = {FlightAutomationGoal::kJumpTo,
+             FlightAutomationPhase::kMove,
+             state.scenario.systems[static_cast<std::size_t>(target_id_)].name,
+             "Flying clear, then jumping"};
+  deadline_ms_ = now_ms + 180000;
+  tap_release_ = false;
+  return true;
+}
+
 void FlightAutomationController::Cancel() {
   status_.phase = FlightAutomationPhase::kCancelled;
   status_.detail = "cancelled";
@@ -316,11 +348,313 @@ void FlightAutomationController::Cancel() {
   tap_release_ = false;
 }
 
+bool FlightAutomationController::FollowingRoute() const {
+  return status_.goal == FlightAutomationGoal::kFollowRoute &&
+         (status_.phase == FlightAutomationPhase::kSelect ||
+          status_.phase == FlightAutomationPhase::kMove ||
+          status_.phase == FlightAutomationPhase::kEngage ||
+          status_.phase == FlightAutomationPhase::kWaiting);
+}
+
+bool FlightAutomationController::FollowRoute(const GameState &state,
+                                             std::uint64_t now_ms) {
+  if (!NovaStarmap_RouteHasHops(state))
+    return false;
+  // A quick second J may arrive after the first press has started the jump.
+  // Continue that exact route leg without restarting the transition.
+  if (state.travel.engaging &&
+      state.travel.destination_system_id != state.travel.starmap_route[1])
+    return false;
+  route_plan_.clear();
+  for (const auto id : state.travel.starmap_route) {
+    if (id < 0)
+      break;
+    route_plan_.push_back(id);
+  }
+  if (route_plan_.size() < 2 ||
+      route_plan_.front() != state.player.current_system_id)
+    return false;
+  route_leg_ = 1;
+  deadline_ms_ = now_ms + 180000;
+  tap_release_ = false;
+  status_ = {FlightAutomationGoal::kFollowRoute,
+             FlightAutomationPhase::kSelect,
+             "Plotted route",
+             {}};
+  return true;
+}
+
+void FlightAutomationController::TickRoute(const GameState &state,
+                                           std::uint64_t now_ms,
+                                           FlightInput &input,
+                                           float elapsed_ticks) {
+  if (state.travel.engaging) {
+    status_.phase = FlightAutomationPhase::kWaiting;
+    return;
+  }
+  if (state.player.current_system_id == route_plan_[route_leg_]) {
+    ++route_leg_;
+    deadline_ms_ = now_ms + 180000; // Allow each leg a full departure window.
+    tap_release_ = false;
+    if (route_leg_ == route_plan_.size()) {
+      status_.phase = FlightAutomationPhase::kComplete;
+      status_.detail = "Route complete.";
+      return;
+    }
+  }
+  if (state.player.current_system_id != route_plan_[route_leg_ - 1] ||
+      state.travel.starmap_route[1] != route_plan_[route_leg_] ||
+      state.travel.starmap_destination_system_id != route_plan_[route_leg_]) {
+    Fail("Auto-route stopped: navigation changed.");
+    return;
+  }
+  const auto *system = state.scenario.System(
+      static_cast<std::int16_t>(state.player.current_system_id + 0x80));
+  const auto slot = state.travel.travel_slot;
+  if (!system || slot < 0 ||
+      static_cast<std::size_t>(slot) >= system->links.size() ||
+      system->links[static_cast<std::size_t>(slot)] < 0x80 ||
+      NovaSystem_ResolveVisibleForTravel(
+          state,
+          static_cast<std::int16_t>(
+              system->links[static_cast<std::size_t>(slot)] - 0x80)) !=
+          route_plan_[route_leg_]) {
+    Fail("Auto-route stopped: next jump is unavailable.");
+    return;
+  }
+  if (NovaAiShip_IsDisabled(state, state.player)) {
+    Fail("Auto-route stopped: ship disabled.");
+    return;
+  }
+  if (state.player.fuel_points < kJumpFuelCost) {
+    Fail("Auto-route stopped: refuel, then double-press J to continue.");
+    return;
+  }
+  if (!NovaTravel_CanStartJump(state)) {
+    Fail("Auto-route stopped: ship cannot jump.");
+    return;
+  }
+  if (state.arrival_command_grace_frames > 0 ||
+      state.player.hyperspace_jump_timer > 0) {
+    status_.phase = FlightAutomationPhase::kWaiting;
+    return;
+  }
+  if (!NovaTravel_PlayerInJumpRange(state)) {
+    const auto *cls = state.scenario.Ship(
+        static_cast<std::int16_t>(state.player.ship_class_id + 0x80));
+    MoveAwayFrom(state.player,
+                 0,
+                 0,
+                 cls ? std::round(cls->turn_rate * 0.1F) : 1.0F,
+                 input,
+                 elapsed_ticks);
+    status_.phase = FlightAutomationPhase::kMove;
+    return;
+  }
+  status_.phase = FlightAutomationPhase::kEngage;
+  Tap(&FlightInput::travel, input);
+}
+
 void FlightAutomationController::ObservedDocked() {
   if (status_.goal == FlightAutomationGoal::kLandAt &&
-      status_.phase == FlightAutomationPhase::kEngage) {
+      (status_.phase == FlightAutomationPhase::kSelect ||
+       status_.phase == FlightAutomationPhase::kMove ||
+       status_.phase == FlightAutomationPhase::kEngage ||
+       status_.phase == FlightAutomationPhase::kWaiting)) {
     status_.phase = FlightAutomationPhase::kComplete;
     status_.detail = "Spaceport observed";
+    target_id_ = -1;
+    tap_release_ = false;
+  }
+}
+
+bool FlightAutomationController::Mining() const {
+  return status_.goal == FlightAutomationGoal::kMine &&
+         status_.phase != FlightAutomationPhase::kComplete &&
+         status_.phase != FlightAutomationPhase::kFailed &&
+         status_.phase != FlightAutomationPhase::kCancelled;
+}
+
+bool FlightAutomationController::MineAsteroid(const GameState &state,
+                                              std::int16_t slot,
+                                              std::uint64_t now_ms) {
+  Cancel();
+  status_ = {FlightAutomationGoal::kMine,
+             FlightAutomationPhase::kSelect,
+             "Asteroid",
+             "Auto-mining. Steer to cancel."};
+  if (slot < 0 ||
+      static_cast<std::size_t>(slot) >= state.asteroid_pool.size() ||
+      !state.asteroid_pool[static_cast<std::size_t>(slot)].active) {
+    Fail("Asteroid is no longer available.");
+    return false;
+  }
+  if (!NovaOutfit_HasMiningScoopOutfit(state, state.player)) {
+    Fail("Auto-mine needs an asteroid scoop.");
+    return false;
+  }
+  mining_bank_ = -1;
+  for (std::size_t bank = 0; bank < state.player.weapon_banks.size(); ++bank) {
+    const auto *weapon =
+        state.scenario.Weapon(static_cast<std::int16_t>(bank + 0x80));
+    if (state.player.weapon_banks[bank].mounted > 0 && weapon &&
+        (weapon->flags_secondary & 0x8000U) != 0 &&
+        (weapon->flags_quaternary & 1U) == 0 &&
+        (weapon->weapon_mode_code == -1 || weapon->weapon_mode_code == 0 ||
+         weapon->weapon_mode_code == 6 || weapon->weapon_mode_code == 7)) {
+      mining_bank_ = static_cast<std::int16_t>(bank);
+      break;
+    }
+  }
+  if (mining_bank_ < 0) {
+    Fail("Auto-mine needs a forward-firing mining weapon.");
+    return false;
+  }
+  mining_group_ =
+      state.asteroid_pool[static_cast<std::size_t>(slot)].mining_group;
+  mining_system_ = state.player.current_system_id;
+  mining_cargo_start_ = Player_ComputeCargoAndJunkTotal(state);
+  deadline_ms_ = now_ms + 180000;
+  tap_release_ = true; // release any selection latch inherited from the menu
+  return true;
+}
+
+void FlightAutomationController::TickMining(const GameState &state,
+                                            FlightInput &input,
+                                            float elapsed_ticks) {
+  if (state.player.current_system_id != mining_system_ ||
+      state.travel.engaging || state.player.hyperspace_jump_timer > 0 ||
+      NovaAiShip_IsDisabled(state, state.player)) {
+    Fail("Auto-mine stopped: ship cannot maneuver.");
+    return;
+  }
+  if (Player_ComputeCargoAndJunkTotal(state) >=
+      Player_ComputeFleetCargoCapacity(state)) {
+    Fail("Auto-mine stopped: cargo hold full.");
+    return;
+  }
+  if (!NovaOutfit_HasMiningScoopOutfit(state, state.player)) {
+    Fail("Auto-mine stopped: no asteroid scoop.");
+    return;
+  }
+  const auto *cls = state.scenario.Ship(
+      static_cast<std::int16_t>(state.player.ship_class_id + 0x80));
+  const float turn = cls ? std::round(cls->turn_rate * .1F) : 1.0F;
+  const float thrust = cls ? cls->accel / 10000.0F * 2.0F : .01F;
+  // Collect existing yield first: it expires, whereas the remaining fragments
+  // do not.
+  const FreeflightObjectState *cargo = nullptr;
+  float nearest = std::numeric_limits<float>::max();
+  for (const auto &object : state.freeflight_objects) {
+    if (!object.persistent || object.lifetime_ticks < 0 ||
+        object.system_id != mining_system_ ||
+        object.mining_group != mining_group_)
+      continue;
+    const float distance = std::hypot(object.pos_x - state.player.pos_x,
+                                      object.pos_y - state.player.pos_y);
+    if (distance < nearest) {
+      nearest = distance;
+      cargo = &object;
+    }
+  }
+  if (cargo) {
+    status_.phase = FlightAutomationPhase::kMove;
+    status_.detail = "Scooping asteroid cargo. Steer to cancel.";
+    MoveToAndStopAt(state.player,
+                    cargo->pos_x,
+                    cargo->pos_y,
+                    1.0F,
+                    turn,
+                    thrust,
+                    input,
+                    elapsed_ticks,
+                    cargo->vel_x,
+                    cargo->vel_y,
+                    false);
+    return;
+  }
+  const AsteroidState *asteroid = nullptr;
+  nearest = std::numeric_limits<float>::max();
+  for (const auto &candidate : state.asteroid_pool) {
+    if (!candidate.active || candidate.mining_group != mining_group_ ||
+        candidate.integrity <= -32000)
+      continue;
+    const float distance =
+        std::hypot(candidate.target_pos_x - state.player.pos_x,
+                   candidate.target_pos_y - state.player.pos_y);
+    if (distance < nearest) {
+      nearest = distance;
+      asteroid = &candidate;
+    }
+  }
+  if (!asteroid) {
+    Stop(state.player, turn, input, elapsed_ticks);
+    if (std::hypot(state.player.vel_x, state.player.vel_y) < kSettledSpeed) {
+      status_.phase = FlightAutomationPhase::kComplete;
+      status_.detail =
+          "Auto-mine finished: " +
+          std::to_string(std::max(0,
+                                  Player_ComputeCargoAndJunkTotal(state) -
+                                      mining_cargo_start_)) +
+          " tons collected.";
+    }
+    return;
+  }
+  const auto *weapon =
+      state.scenario.Weapon(static_cast<std::int16_t>(mining_bank_ + 0x80));
+  if (!weapon ||
+      state.player.weapon_banks[static_cast<std::size_t>(mining_bank_)]
+              .mounted <= 0 ||
+      !NovaWeapon_CanFireWeaponBank(state, state.player, mining_bank_)) {
+    Fail("Auto-mine stopped: mining weapon unavailable.");
+    return;
+  }
+  if ((weapon->flags & 2U) != 0 &&
+      state.player.active_weapon_bank_slot != mining_bank_) {
+    Tap(&FlightInput::cycle_secondary, input);
+    return;
+  }
+  const float reach = weapon->weapon_mode_code == 0
+                          ? static_cast<float>(weapon->beam_length_px)
+                          : weapon->range_scalar;
+  // Break rocks close to the scoop so their short-lived yield can be reached.
+  const float firing_distance = std::min(65.0F, reach * .75F);
+  status_.phase = FlightAutomationPhase::kMove;
+  status_.detail = "Approaching asteroid. Steer to cancel.";
+  MoveToAndStopAt(state.player,
+                  asteroid->target_pos_x,
+                  asteroid->target_pos_y,
+                  20.0F,
+                  turn,
+                  thrust,
+                  input,
+                  elapsed_ticks,
+                  asteroid->target_vel_x,
+                  asteroid->target_vel_y,
+                  false);
+  if (nearest > firing_distance)
+    return;
+  Ship target;
+  target.pos_x = asteroid->target_pos_x;
+  target.pos_y = asteroid->target_pos_y;
+  target.vel_x = asteroid->target_vel_x;
+  target.vel_y = asteroid->target_vel_y;
+  const float desired = static_cast<float>(NovaAi_AimWeaponPredictive(
+                            state, state.player, target, mining_bank_)) *
+                        kDegToRad;
+  if (std::hypot(state.player.vel_x - asteroid->target_vel_x,
+                 state.player.vel_y - asteroid->target_vel_y) < .5F) {
+    input.turn_left = input.turn_right = input.thrust = false;
+    Face(state.player.heading, desired, turn, elapsed_ticks, input);
+  }
+  if (std::abs(AngleDelta(state.player.heading, desired)) <=
+      std::max(2.0F, turn * elapsed_ticks) * kDegToRad) {
+    status_.phase = FlightAutomationPhase::kEngage;
+    status_.detail = "Mining asteroid. Steer to cancel.";
+    if ((weapon->flags & 2U) != 0)
+      input.fire_secondary = true;
+    else
+      input.fire = true;
   }
 }
 
@@ -392,7 +726,8 @@ void FlightAutomationController::MoveToAndStopAt(const PlayerShip &ship,
                                                  FlightInput &input,
                                                  float elapsed_ticks,
                                                  float target_vel_x,
-                                                 float target_vel_y) {
+                                                 float target_vel_y,
+                                                 bool lead_moving_target) {
   const float dx = x - ship.pos_x;
   const float dy = y - ship.pos_y;
   const float distance = std::hypot(dx, dy);
@@ -421,7 +756,7 @@ void FlightAutomationController::MoveToAndStopAt(const PlayerShip &ship,
   // Follow a moving target by leading it by the estimated closing time.
   float aim_x = x;
   float aim_y = y;
-  if (speed_cap > kArriveVelocityDeadband) {
+  if (lead_moving_target && speed_cap > kArriveVelocityDeadband) {
     const float lead_ticks = std::min(distance / speed_cap, 120.0F);
     aim_x += target_vel_x * lead_ticks;
     aim_y += target_vel_y * lead_ticks;
@@ -466,11 +801,20 @@ void FlightAutomationController::Tick(const GameState &state,
     return;
   }
   if (now_ms > deadline_ms_) {
-    Fail("simulation-time deadline exceeded");
+    Fail(FollowingRoute() ? "Auto-route stopped: departure timed out."
+                          : "simulation-time deadline exceeded");
+    return;
+  }
+  if (status_.goal == FlightAutomationGoal::kFollowRoute) {
+    TickRoute(state, now_ms, input, elapsed_ticks);
     return;
   }
   if (status_.goal == FlightAutomationGoal::kDestroy) {
     TickDestroy(state, input, elapsed_ticks);
+    return;
+  }
+  if (status_.goal == FlightAutomationGoal::kMine) {
+    TickMining(state, input, elapsed_ticks);
     return;
   }
   if (status_.goal == FlightAutomationGoal::kJumpTo) {
@@ -483,11 +827,12 @@ void FlightAutomationController::Tick(const GameState &state,
       status_.phase = FlightAutomationPhase::kWaiting;
       return;
     }
-    if (!state.travel.hyperspace_mode) {
-      Tap(&FlightInput::hyperspace_mode, input);
-      return;
-    }
-    if (state.travel.destination_system_id != target_id_) {
+    // Cycling/plotting already arms a jump without the HUD's hyperspace-mode
+    // flag. Sending H here can repeatedly reopen the route overlay when the
+    // plotted-jump mode is already 3, never reaching the movement phase.
+    if (state.travel.starmap_destination_system_id != target_id_ ||
+        state.travel.travel_slot < 0) {
+      input.quiet_navigation = true;
       Tap(&FlightInput::cycle_destination_next, input);
       return;
     }

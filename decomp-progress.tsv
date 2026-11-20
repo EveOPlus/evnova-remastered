@@ -105,7 +105,7 @@ address	name	impl_file	reimpl_pct	comment
 0x004160E0	LicenseDigest_TouchAndLoadByte		0%	
 0x004160F0	Util_ReturnZero		0%	
 0x00416100	NovaGameSession_Run	src/nova_app.cpp	45%	gameplay,divergence
-0x00417600	Frame_SpaceflightLoop	src/game/spaceflight.cpp	15%	gameplay,cadence,rendering
+0x00417600	Frame_SpaceflightLoop	src/game/spaceflight.cpp	15%	gameplay,cadence,rendering,divergence
 0x004186B0	Frame_TickSystems	src/game/spaceflight.cpp	40%	gameplay,cadence
 0x00419210	Frame_RefreshTransitionFrameAuxVisuals		0%	
 0x004192D0	Ship_ApplyDamageToShip	src/game/collision.cpp	100%	license
@@ -120,15 +120,15 @@ address	name	impl_file	reimpl_pct	comment
 0x0041E640	Weapon_SpawnShipFromCarrierBayWeapon	src/game/ship_spawn.cpp	98%	rendering
 0x0041F330	Player_RedistributeFleetCargoOverflow	src/game/outfit.cpp	95%	gameplay
 0x0041F800	Ship_SpawnFreeflightObjectForShip	src/game/freeflight_objects.cpp	100%	
-0x0041FB50	Ship_SpawnFreeflightObjectAtPosition	src/game/freeflight_objects.cpp	90%	gameplay
+0x0041FB50	Ship_SpawnFreeflightObjectAtPosition	src/game/freeflight_objects.cpp	90%	gameplay,divergence
 0x0041FD30	Shot_SpawnShotFromWeapon	src/game/weapon_shots.cpp	95%	gameplay,rng
 0x00420D30	Shot_SpawnLinkedShotsOnImpact	src/game/weapon_shots.cpp	100%	
 0x004211D0	Shot_SpawnAreaImpactEffects	src/game/impact_effects.cpp	100%	
 0x00421500	Shot_SpawnImpactEffectSprite	src/game/impact_effects.cpp	55%	rendering
 0x004215D0	Shot_SpawnWeaponSmokePuff	src/game/weapon_shots.cpp	100%	
 0x004216B0	Asteroid_InitSystem	src/game/asteroid.cpp	100%	
-0x00421830	Asteroid_Spawn	src/game/asteroid.cpp	75%	license,gameplay
-0x00421E60	Asteroid_SpawnRecord	src/game/asteroid.cpp	40%	gameplay
+0x00421830	Asteroid_Spawn	src/game/asteroid.cpp	75%	license,gameplay,divergence
+0x00421E60	Asteroid_SpawnRecord	src/game/asteroid.cpp	40%	gameplay,divergence
 0x00421FD0	Stellar_SpawnDefenseFleetShip	src/game/ship_spawn.cpp	100%	divergence
 0x004221D0	Ship_IsInboundThreatExceedingDefenses	src/game/ship_ai_weapons.cpp	100%	
 0x00422210	Ship_TallyInboundWeaponThreat	src/game/weapon_shots.cpp	100%	
@@ -339,7 +339,7 @@ address	name	impl_file	reimpl_pct	comment
 0x004623D0	Sprite_GetFrameFullHeight	src/game/collision.cpp	40%	rendering
 0x00462410	System_GetCurrentSystemLinkSpriteWidth	src/game/spaceflight.cpp	80%	gameplay
 0x004624C0	Sprite_GetShipClassEscortFrameWidth	src/game/escort_formation.cpp	90%	gameplay,correctness
-0x00462550	Asteroid_SpawnDestructionPackage	src/game/collision.cpp	90%	rng,bugfix
+0x00462550	Asteroid_SpawnDestructionPackage	src/game/collision.cpp	90%	rng,bugfix,divergence
 0x00462850	Ship_SelectNearestEngagedTarget	src/game/targeting.cpp	100%	
 0x004629E0	Government_IsCandidateHostileToTargeter	src/game/government.cpp	100%	
 0x00462BD0	Ship_SelectNearestHostileCombatTarget	src/game/targeting.cpp	100%	
@@ -610,11 +610,11 @@ address	name	impl_file	reimpl_pct	comment
 0x00486EC0	NoSys_NoOp_00486ec0		0%	
 0x00486ED0	NovaGameMode_DispatchAction	src/nova_app.cpp	100%	
 0x004872A0	NovaCommand_DispatchToMode	src/nova_app.cpp	100%	
-0x004873B0	NovaRender_RedrawAndPresentFrame	src/nova_app.cpp	100%	
+0x004873B0	NovaRender_RedrawAndPresentFrame	src/nova_app.cpp	100%	divergence
 0x00487FCD	NovaRender_RestoreClippedRegion		0%	
 0x00488080	NovaMainLoop_UpdateFrame	src/nova_app.cpp	90%	ui
 0x00488380	NovaView_UpdateGameplayViewport	src/game/gameplay_interface.cpp	45%	rendering
-0x00488650	Menu_RunSettingsDialog	src/game/preferences.cpp	95%	ui
+0x00488650	Menu_RunSettingsDialog	src/game/preferences.cpp	95%	ui,divergence
 0x00489210	Ship_RunSpaceflightMode	src/game/spaceflight.cpp	12%	gameplay
 0x00489D70	Menu_RunNewGameFlow	src/game/new_pilot_flow.cpp	80%	gameplay
 0x0048A7E0	Menu_RunPilotSelectionDialog	src/game/new_pilot_flow.cpp	75%	gameplay,rng
@@ -623,7 +623,7 @@ address	name	impl_file	reimpl_pct	comment
 0x0048B250	NovaAudio_PreloadTransitionEffects		0%	NovaAudio_PreloadTransitionEffects into DAT_007d24b8
 0x0048B280	Menu_RunKeySettingsDialog	src/game/preferences.cpp	88%	ui
 0x0048B6D0	Menu_KeySettingsHandleInput	src/game/preferences.cpp	80%	ui
-0x0048B860	Menu_KeySettingsDraw	src/game/preferences.cpp	85%	ui
+0x0048B860	Menu_KeySettingsDraw	src/game/preferences.cpp	85%	ui,divergence
 0x0048BBB0	NovaHud_ReleaseTransientResources		0%	
 0x0048BC20	NovaAudio_PlayTransitionEffectsWait		0%	
 0x0048BC90	NovaHud_UpdateLayoutState	src/nova_app.cpp	80%	ui
@@ -713,8 +713,8 @@ address	name	impl_file	reimpl_pct	comment
 0x004A2F50	NovaUi_InitThreeStateButtonArt	src/game/services_buttons.cpp	60%	ui
 0x004A3300	NovaUi_ShutdownThreeStateButtonArt		0%	
 0x004A3340	NovaUi_DrawThreeStateButton	src/game/services_buttons.cpp	78%	rendering,ui
-0x004A3AA0	NovaUi_RunStarmapWindow	src/game/starmap.cpp	88%	gameplay,license
-0x004A4353	NovaUi_StarmapWindowInnerLoop	src/game/starmap.cpp	65%	gameplay,ui
+0x004A3AA0	NovaUi_RunStarmapWindow	src/game/starmap.cpp	88%	gameplay,license,divergence
+0x004A4353	NovaUi_StarmapWindowInnerLoop	src/game/starmap.cpp	65%	gameplay,ui,divergence
 0x004A4FD0	NovaUi_CloseStarmapWindow		0%	
 0x004A51E0	FUN_004a51e0		0%	
 0x004A51F0	NovaUi_RedrawStarmapWindow	src/game/starmap.cpp	82%	rendering,ui,bugfix
@@ -1430,7 +1430,7 @@ address	name	impl_file	reimpl_pct	comment
 0x004FC570	FUN_004fc570		0%	
 0x004FCA30	FUN_004fca30	src/pict_image.cpp	80%	rendering
 0x004FCAC0	FUN_004fcac0	src/pict_image.cpp	60%	rendering
-0x004FCC00	Pict_DecodePixmapRows	src/pict_image.cpp	70%	rendering
+0x004FCC00	Pict_DecodePixmapRows	src/pict_image.cpp	90%	rendering
 0x004FD0A0	Pict_ParseDirectBitsRect	src/pict_image.cpp	70%	rendering
 0x004FDB60	FUN_004fdb60		0%	
 0x004FDB90	FUN_004fdb90		0%	
@@ -1851,7 +1851,7 @@ address	name	impl_file	reimpl_pct	comment
 0x008722B0	FUN_008722b0		0%	Late-linked patch chunk of 0x00493fc0 key-down arm: jumps back into the directional block (ported in LandedStoreSession::MoveCursor); Space (0x20) -> action 10 unported.
 0x00872310	Settings_LoadIniAndPrefs		0%	
 0x00872375	Settings_PollKeyX2Mode		0%	
-0x00872384	DrawContext_SetHyperspaceFlashColor	src/game/preferences.hpp	100%	
+0x00872384	DrawContext_SetHyperspaceFlashColor	src/game/preferences.hpp	100%	divergence
 0x008723B4	DrawTextW		0%	
 0x008723BA	FUN_008723ba		0%	
 0x008723C9	FUN_008723c9		0%	

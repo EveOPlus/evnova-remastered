@@ -888,6 +888,14 @@ std::vector<std::byte> PilotFileSerialize(const PilotFile &pilot_file,
   WriteBoundedCString(block2, 0x5ede, 0x10, pilot_file.date_prefix);
   WriteBoundedCString(block2, 0x5eee, 0x10, pilot_file.date_suffix);
 
+  // The original saver encodes its blocks before writing (0x004c7dd0).
+  // Plain positive stellar indices also pass its decoder's <0x800 gate, but
+  // the -1 no-stellar sentinel does not: it must use the XOR representation
+  // or the loader would transform plaintext into corrupted pilot fields.
+  if (jump_dest_stellar < 0) {
+    DecodePilotBlock(block1, true);
+  }
+
   // File framing: [u32 block1 size][block1][u32 block2 size][block2]
   // [ship-name C-string] (FUN_004f22b0 / Stream_WriteLocked /
   // FUN_004f22e0 in the original).
@@ -1247,14 +1255,16 @@ PilotLoadError PilotFileDeserialize(std::span<const std::byte> bytes,
 bool PilotFileSaveGame(const std::filesystem::path &pilots_dir,
                        const GameState &state,
                        std::int16_t jump_dest_stellar) {
-  // Ghidra 0x004c7db0 PilotFile_SaveGame -> 0x004c7dd0 PilotFile_SaveGameCore:
-  // builds <pilots_dir><pilot name>.plt, serializes the state blocks, writes
-  // them, then records the last-pilot marker (PilotFile_RecordLastPilotPath
-  // 0x004c7d40 -- not wired, see header).
+  return PilotFileSaveGameToPath(
+      pilots_dir / (state.pilot.first_name + ".plt"), state, jump_dest_stellar);
+}
+
+bool PilotFileSaveGameToPath(const std::filesystem::path &path,
+                             const GameState &state,
+                             std::int16_t jump_dest_stellar) {
   PilotFile record = PilotFileCollectFromState(state);
   const std::vector<std::byte> bytes =
       PilotFileSerialize(record, jump_dest_stellar);
-  const std::filesystem::path path = pilots_dir / (record.pilot_name + ".plt");
   std::ofstream file(path, std::ios::binary | std::ios::trunc);
   if (!file) {
     NovaLog::Error("pilot save: could not open '{}' for writing",
@@ -1263,6 +1273,7 @@ bool PilotFileSaveGame(const std::filesystem::path &pilots_dir,
   }
   file.write(reinterpret_cast<const char *>(bytes.data()),
              static_cast<std::streamsize>(bytes.size()));
+  file.close();
   if (!file) {
     NovaLog::Error("pilot save: short write to '{}'", path.string());
     return false;

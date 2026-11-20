@@ -219,11 +219,11 @@ WalkToBitsRect(std::span<const std::byte> bytes) {
   return std::nullopt;
 }
 
-// @port 0x004FCC00 70% rendering
+// @port 0x004FCC00 90% rendering
 // Ghidra 0x004fcc00 Pict_DecodePixmapRows: packbits + raw-copy paths, the
 // masked-rowBytes 1-byte/BE16 length rule, 1-bit expansion and 8-bit indexed
-// palette output used by PICTs 0x81/0x82/0x8b. Remaining: the depth-0x20
-// 4-component path and output-buffer aliasing details.
+// palette output used by PICTs 0x81/0x82/0x8b, and depth-0x20 planar ARGB
+// (the alpha plane is discarded). Remaining: output-buffer aliasing details.
 [[nodiscard]] bool DecodePackBitsRow(std::span<const std::byte> encoded,
                                      std::span<std::uint8_t> output,
                                      std::size_t unit_size) {
@@ -438,6 +438,7 @@ Resource_LoadPictAsImage(std::span<const std::byte> pict_data) {
     kMonochrome,
     kRgb555,
     kRgb24Planar,
+    kArgb32Planar,
   };
   PixelFormat format = PixelFormat::kIndexed8;
   std::size_t unit_size = 1;
@@ -460,9 +461,12 @@ Resource_LoadPictAsImage(std::span<const std::byte> pict_data) {
     // only controls whether the row length is 1 or 2 bytes.
     row_out_bytes = width * 3;
     format = PixelFormat::kRgb24Planar;
+  } else if (pixel_size == 32 && component_count == 4) {
+    // Ghidra 0x004fcc00 depth 0x20 discards the first plane and interleaves
+    // the remaining RGB planes. ARPIA2's splash uses this opaque art path.
+    row_out_bytes = width * 4;
+    format = PixelFormat::kArgb32Planar;
   } else {
-    // TODO(decomp(0x004fcc00)) skipped: 32-bit 4-component sources take the
-    // unported depth-0x20 row path; no shipped Nova resource uses it.
     NovaLog::Todo("unsupported PICT BitsRect layout ({}-bit, {} components)",
                   pixel_size,
                   component_count);
@@ -594,10 +598,11 @@ Resource_LoadPictAsImage(std::span<const std::byte> pict_data) {
         green = static_cast<std::uint8_t>(((pixel >> 5U) & 31U) * 255U / 31U);
         blue = static_cast<std::uint8_t>((pixel & 31U) * 255U / 31U);
       } else {
-        // RGB planar interleave (FUN_004fcc00, depth 0x18).
-        red = row[x];
-        green = row[width + x];
-        blue = row[width * 2 + x];
+        // RGB planes follow the discarded alpha plane for depth 0x20.
+        const auto base = format == PixelFormat::kArgb32Planar ? width : 0;
+        red = row[base + x];
+        green = row[base + width + x];
+        blue = row[base + width * 2 + x];
       }
       const auto destination = (y * width + x) * 4U;
       image.rgba_pixels[destination] = red;

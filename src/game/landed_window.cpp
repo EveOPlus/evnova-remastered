@@ -1,5 +1,6 @@
 #include "landed_window.hpp"
 #include "mission.hpp"
+#include "movie_player.hpp"
 
 #include "../brgr_archive.hpp"
 #include "../log.hpp"
@@ -1386,6 +1387,7 @@ LandedExit NovaLanded_RunWindow(SdlPlatform &platform,
   const auto desc = NovaResource_LoadStellarDescription(ctx.stellar_id);
   if (desc) {
     description = desc->text;
+    (void)NovaMovie_Play(platform, desc->status);
     Mission_ExpandStringPlaceholders(state, description);
     NovaLog::Info("landed description for stellar {} ({} chars)",
                   static_cast<int>(ctx.stellar_id),
@@ -1563,7 +1565,8 @@ LandedExit NovaLanded_RunWindow(SdlPlatform &platform,
                                    false,
                                    render_background,
                                    message.dialog_variant,
-                                   /*mission_dialog=*/true);
+                                   /*mission_dialog=*/true,
+                                   message.movie);
       });
   (void)Mission_RunAvailLocOffers(
       state,

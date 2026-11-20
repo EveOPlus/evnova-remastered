@@ -142,7 +142,7 @@ TEST_CASE("Preferences defaults match NovaPrefs_ResetToDefaults") {
   CHECK(prefs.sound_volume == 5);
   CHECK(prefs.brightness == 3);
   CHECK(prefs.share_processor_time == true);
-  CHECK(prefs.quicktime_movies == true); // inverted: 1 = movies off
+  CHECK(prefs.quicktime_movies == false); // inverted: 0 = movies on
   CHECK(prefs.smoke_trails == false);
   CHECK(prefs.ship_animations == true);
   CHECK(prefs.engine_glows == true);
@@ -179,15 +179,11 @@ TEST_CASE("Sound preference uses the original mixer level scale") {
   CHECK(game::NovaAudio_EffectGainFromPreference(33) == 1.0F);
 }
 
-TEST_CASE("Hyperspace effect preference selects the flash colour") {
+TEST_CASE("Hyperspace transitions stay dark with either legacy preference") {
   game::NovaPreferences prefs;
   prefs.ResetToDefaults();
-  // Default raw byte 0 = effects on = white (0x00872384 applies the requested
-  // white when g_hyperspace_effects is zero).
-  CHECK_FALSE(game::NovaPrefs_HyperspaceFlashIsBlack(prefs));
-  // The Settings checkbox is inverted, so a checked "Hyperspace Effects" maps
-  // to the raw byte 0; turning the option off stores a non-zero byte, which
-  // the CE colour setter turns into black.
+  // Both legacy settings use the remake's dark jump transition.
+  CHECK(game::NovaPrefs_HyperspaceFlashIsBlack(prefs));
   prefs.hyperspace_effects = true;
   CHECK(game::NovaPrefs_HyperspaceFlashIsBlack(prefs));
 }
@@ -198,7 +194,8 @@ TEST_CASE("Locked quality preferences force the render values") {
   // Simulate a hostile legacy .prf: every locked field set against the port's
   // fixed render values.
   prefs.share_processor_time = false;
-  prefs.quicktime_movies = false; // enable movies, then verify the lock
+  prefs.quicktime_movies =
+      false; // enable movies; the graphics lock must preserve the choice
   prefs.smoke_trails = true;
   prefs.ship_animations = false;
   prefs.engine_glows = false;
@@ -211,8 +208,8 @@ TEST_CASE("Locked quality preferences force the render values") {
 
   game::NovaPrefs_ApplyLockedPreferences(prefs);
   CHECK(prefs.share_processor_time == true);
-  CHECK(prefs.quicktime_movies == true); // inverted: 1 = movies off
-  CHECK(prefs.smoke_trails == false);    // inverted: 0 = trails on
+  CHECK(prefs.quicktime_movies == false); // inverted: 0 = movies on
+  CHECK(prefs.smoke_trails == false);     // inverted: 0 = trails on
   CHECK(prefs.ship_animations == true);
   CHECK(prefs.engine_glows == true);
   CHECK(prefs.running_lights == true);

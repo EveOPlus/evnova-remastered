@@ -1,7 +1,7 @@
 {
   "name": "evnova",
   "version-string": "0.1.0",
-  "description": "Clean-room recompilation of Escape Velocity Nova",
+  "description": "Modern native rebuild of Escape Velocity Nova",
   "dependencies": [
     "sdl3",
     {

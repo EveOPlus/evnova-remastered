@@ -24,7 +24,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', type=Path, default=ROOT / 'build/release/src/evnova')
     parser.add_argument('--output', type=Path, default=ROOT / 'dist/evnova-macos-arm64.zip')
-    parser.add_argument('--bundle-id', default='io.github.wraitii.evnova-decomp')
+    parser.add_argument('--bundle-id', default='io.github.eveoplus.evnova-remastered')
     parser.add_argument('--version', default=None, help='defaults to the CMake project version')
     parser.add_argument('--build-number', default='1')
     parser.add_argument('--identity', default='-', help='Developer ID Application identity; default: ad hoc')
@@ -78,6 +78,14 @@ def main():
         contents = app / 'Contents'
         (contents / 'MacOS').mkdir(parents=True)
         (contents / 'Resources').mkdir()
+        from package_release import notice_files
+        notices = notice_files(ROOT, ROOT / 'vcpkg_installed/arm64-osx/share')
+        notices.update({name: ROOT / name for name in ('LICENSE.txt', 'CREDITS.md', 'NOTICE.md',
+                       'src/third_party/dr_mp3.h', 'src/third_party/pl_mpeg.h')})
+        for name, source in notices.items():
+            destination = contents / 'Resources' / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, destination)
         executable = contents / 'MacOS/evnova'
         shutil.copyfile(args.binary, executable)
         executable.chmod(0o755)

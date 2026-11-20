@@ -83,6 +83,7 @@ void NovaFreeflight_SpawnForShip(GameState &state, const Ship &ship) {
     object.system_id = ship.current_system_id;
     object.frame_counter = static_cast<float>(RandomBelow(state, 0x24));
     object.persistent = false;
+    object.mining_group = 0;
     object.extra = 0;
     object.sprite_set_index = 0;
     object.spin_rate = RandomSpinRate(state);
@@ -104,13 +105,15 @@ void NovaFreeflight_SpawnForShip(GameState &state, const Ship &ship) {
   }
 }
 
-// @port 0x0041fb50 90% gameplay
+// @port 0x0041fb50 90% gameplay,divergence
+// DIVERGENCE(original): carries the source mining_group for the input assist.
 // Ghidra 0x0041fb50 Ship_SpawnFreeflightObjectAtPosition.
 void NovaFreeflight_SpawnAtPosition(GameState &state,
                                     float pos_x,
                                     float pos_y,
                                     std::int16_t extra,
-                                    std::int16_t sprite_set_index) {
+                                    std::int16_t sprite_set_index,
+                                    std::uint64_t mining_group) {
   for (FreeflightObjectState &object : state.freeflight_objects) {
     if (object.lifetime_ticks >= 0.0F) {
       continue;
@@ -123,6 +126,7 @@ void NovaFreeflight_SpawnAtPosition(GameState &state,
     object.system_id = state.player.current_system_id;
     object.frame_counter = static_cast<float>(RandomBelow(state, 0x24));
     object.persistent = true;
+    object.mining_group = mining_group;
     object.extra = extra;
     object.sprite_set_index = sprite_set_index;
     object.spin_rate = RandomSpinRate(state);

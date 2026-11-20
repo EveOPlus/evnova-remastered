@@ -135,6 +135,7 @@ TEST_CASE("a fragmenting asteroid still spawns its children and its yield",
                                                   /*yield_qty=*/10,
                                                   /*yield_type=*/5,
                                                   /*fragments=*/{0, -1, 2});
+  asteroid.mining_group = 42;
 
   REQUIRE(NovaWeapon_SpawnProjectile(state, 0, -1, 0) == 0);
   NovaWeapon_ResolveDirectShotCollisions(state);
@@ -148,6 +149,12 @@ TEST_CASE("a fragmenting asteroid still spawns its children and its yield",
   const int boxes = ActiveFreeflightCount(state);
   CHECK(boxes >= 5);
   CHECK(boxes <= 15);
+  for (const auto &child : state.asteroid_pool)
+    if (child.active)
+      CHECK(child.mining_group == 42);
+  for (const auto &box : state.freeflight_objects)
+    if (box.lifetime_ticks >= 0)
+      CHECK(box.mining_group == 42);
 }
 
 TEST_CASE("frag_count 1 spawns one child (BUGFIX(original))",

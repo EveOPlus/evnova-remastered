@@ -42,7 +42,9 @@ constexpr float kExtraValueWidth = 84.0F;
 // up and down targets meet but never overlap.
 constexpr float kExtraArrowHitPadX = 8.0F;
 constexpr float kExtraArrowHitPadY = 5.0F;
-constexpr float kExtraWindowHeight = 372.0F;
+constexpr float kExtraWindowHeight = 440.0F;
+constexpr SDL_FRect kRemasteredToggle{24.0F, 140.0F, 288.0F, 22.0F};
+constexpr SDL_FRect kArpiaToggle{24.0F, 342.0F, 288.0F, 22.0F};
 constexpr float kExtraButtonWidth = 70.0F;
 constexpr float kExtraButtonHeight = 20.0F;
 constexpr float kExtraButtonMargin = 13.0F;
@@ -196,6 +198,11 @@ void NovaExtraPrefs_Parse(std::istream &in,
           value, key, source, line_number, prefs.scale.flight_scene);
     } else if (key == kMissionScaleKey) {
       ParseScaleOrDefault(value, key, source, line_number, prefs.scale.mission);
+    } else if (key == "radar_zoom") {
+      ParseScaleOrDefault(value, key, source, line_number, prefs.scale.radar);
+    } else if (key == "remastered_graphics") {
+      ParseBoolOrDefault(
+          value, key, source, line_number, prefs.remastered_graphics);
     } else if (key == kRunInWindowKey) {
       ParseBoolOrDefault(value, key, source, line_number, prefs.run_in_window);
     } else if (key == kSafeBugFixesKey) {
@@ -249,10 +256,12 @@ void NovaExtraPrefs_Write(std::ostream &out, const NovaExtraPrefs &prefs) {
     out << kInstallRootKey << '=' << prefs.install_root->string() << '\n';
   }
   out << "\n[display]\n"
+      << "remastered_graphics=" << BoolFlag(prefs.remastered_graphics) << '\n'
       << kUiScaleKey << '=' << FormatScale(prefs.scale.ui) << '\n'
       << kFlightSceneScaleKey << '=' << FormatScale(prefs.scale.flight_scene)
       << '\n'
       << kMissionScaleKey << '=' << FormatScale(prefs.scale.mission) << '\n'
+      << "radar_zoom=" << FormatScale(prefs.scale.radar) << '\n'
       << "# run_in_window: 1 keeps the normal resizable window, 0 switches to\n"
          "# fullscreen (the original's Run in a Window toggle).\n"
       << kRunInWindowKey << '=' << BoolFlag(prefs.run_in_window) << '\n';
@@ -339,6 +348,8 @@ struct ExtraPrefsLayout {
 }
 
 enum class ExtraPrefsControl {
+  remastered,
+  arpia,
   none,
   ok,
   ui_up,
@@ -496,6 +507,10 @@ HitTestExtraPrefs(const ExtraPrefsLayout &layout, float x, float y) {
   if (hit(layout.ok_button)) {
     return ExtraPrefsControl::ok;
   }
+  if (hit(kRemasteredToggle))
+    return ExtraPrefsControl::remastered;
+  if (hit(kArpiaToggle))
+    return ExtraPrefsControl::arpia;
   constexpr std::array<ExtraPrefsControl, 3> kUpControl{
       ExtraPrefsControl::ui_up,
       ExtraPrefsControl::mission_up,
@@ -615,9 +630,9 @@ void DrawExtraTooltip(SdlPlatform &platform,
   const SdlPlatform::ScopedPlacement guard(platform, overlay);
   SDL_Renderer *const renderer = platform.renderer();
   const SDL_FRect box{x, y, box_w, box_h};
-  SDL_SetRenderDrawColor(renderer, 255, 255, 225, 245);
+  SDL_SetRenderDrawColor(renderer, 36, 39, 45, 255);
   SDL_RenderFillRect(renderer, &box);
-  SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+  SDL_SetRenderDrawColor(renderer, 140, 145, 152, SDL_ALPHA_OPAQUE);
   SDL_RenderRect(renderer, &box);
   float baseline = y + kPad + 11.0F;
   for (const std::string &line : lines) {
@@ -653,15 +668,7 @@ void DrawExtraPrefsDialog(SdlPlatform &platform,
   }
 
   const SDL_FRect &win = layout.window;
-  SDL_SetRenderDrawColor(
-      renderer, kWindowFill.r, kWindowFill.g, kWindowFill.b, SDL_ALPHA_OPAQUE);
-  SDL_RenderFillRect(renderer, &win);
-  SDL_SetRenderDrawColor(renderer,
-                         kWindowFrame.r,
-                         kWindowFrame.g,
-                         kWindowFrame.b,
-                         SDL_ALPHA_OPAQUE);
-  SDL_RenderRect(renderer, &win);
+  DrawPanel(renderer, win);
 
   // Title band, identical chrome to DrawSettingsDialog but with the port-only
   // title.
@@ -769,7 +776,7 @@ void DrawExtraPrefsDialog(SdlPlatform &platform,
     const bool checked = field != nullptr && *field;
     if (hover == entry.control) {
       const SDL_FRect row_rect = OffsetRect(ExtraBugFixRowRect(row), win);
-      SDL_SetRenderDrawColor(renderer, 226, 226, 226, SDL_ALPHA_OPAQUE);
+      SDL_SetRenderDrawColor(renderer, 64, 29, 34, SDL_ALPHA_OPAQUE);
       SDL_RenderFillRect(renderer, &row_rect);
     }
     DrawCheckBox(platform,
@@ -780,6 +787,30 @@ void DrawExtraPrefsDialog(SdlPlatform &platform,
                  false);
   }
 
+  DrawCheckBox(platform,
+               font_cache,
+               OffsetRect({24.0F, 142.0F, 12.0F, 12.0F}, win),
+               "Remastered graphics",
+               platform.remastered_graphics(),
+               false);
+
+  DrawCheckBox(platform,
+               font_cache,
+               OffsetRect({24.0F, 344.0F, 12.0F, 12.0F}, win),
+               "ARPIA2 expansion (all extras)",
+               NovaPaths::ArpiaCampaignSelected(),
+               !NovaPaths::ArpiaCampaignInstalled());
+  NovaText_Draw(platform,
+                font_cache,
+                NovaFontFamily::kGeneva,
+                10.0F,
+                kNovaFontStyleRegular,
+                kControlDisabledText,
+                win.x + 24.0F,
+                win.y + 381.0F,
+                NovaPaths::ArpiaCampaignInstalled()
+                    ? "Restart to switch. Separate campaign pilots."
+                    : "Install the ARPIA2 pack to enable.");
   DrawButton(platform,
              font_cache,
              OffsetRect(layout.ok_button, win),
@@ -832,6 +863,7 @@ bool NovaMenu_RunExtraPrefsDialog(
   }
   const SettingsArtwork artwork = LoadSettingsArtwork(platform);
   NovaExtraPrefs working = extra_prefs;
+  ProbeUiAutoClear probe_ui_guard(platform);
   // Closing never rolls edits back: like the original Settings dialog, every
   // change applies live and stays applied after the modal closes. Closing
   // also persists to 'EV Nova Extra Prefs.ini' so nothing is lost on restart.
@@ -839,7 +871,10 @@ bool NovaMenu_RunExtraPrefsDialog(
     extra_prefs = working;
     (void)NovaExtraPrefs_SaveToSystemStore(extra_prefs);
   };
-  auto apply_scale = [&] { platform.SetPresentationScale(working.scale); };
+  auto apply_scale = [&] {
+    platform.SetPresentationScale(working.scale);
+    platform.SetRemasteredGraphics(working.remastered_graphics);
+  };
   apply_scale();
   NovaLog::Info("opening Extra Prefs dialog (port-only)");
 
@@ -858,6 +893,17 @@ bool NovaMenu_RunExtraPrefsDialog(
                          hover,
                          mouse,
                          render_background);
+    platform.PublishProbeUi(
+        "extra_prefs",
+        {{"remastered_graphics",
+          platform.current_placement().ToWindowRect(
+              OffsetRect(kRemasteredToggle, layout.window))},
+         {"arpia2",
+          platform.current_placement().ToWindowRect(
+              OffsetRect(kArpiaToggle, layout.window))},
+         {"ok",
+          platform.current_placement().ToWindowRect(
+              OffsetRect(layout.ok_button, layout.window))}});
     platform.Present();
 
     for (auto in = platform.PollTextEvent(); in;
@@ -875,6 +921,16 @@ bool NovaMenu_RunExtraPrefsDialog(
       }
       const SDL_FPoint click = platform.mouse_position();
       const ExtraPrefsControl hit = HitTestExtraPrefs(layout, click.x, click.y);
+      if (hit == ExtraPrefsControl::remastered) {
+        working.remastered_graphics = !working.remastered_graphics;
+        apply_scale();
+        continue;
+      }
+      if (hit == ExtraPrefsControl::arpia) {
+        (void)NovaPaths::SelectArpiaCampaign(
+            !NovaPaths::ArpiaCampaignSelected());
+        continue;
+      }
       if (hit == ExtraPrefsControl::ok) {
         commit();
         return true;

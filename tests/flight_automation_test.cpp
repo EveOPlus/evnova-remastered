@@ -1,11 +1,46 @@
 #include "game/flight_automation.hpp"
+#include "game/jump_controls.hpp"
+#include "game/outfit.hpp"
 #include "game/spaceflight.hpp"
+#include "game/starmap_route.hpp"
+#include "game/travel.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
 
 using namespace game;
+
+TEST_CASE("jump key distinguishes single presses, double presses and holds",
+          "[jump-controls]") {
+  JumpKeyControl key;
+  CHECK(key.Update(true, 0, 0, 1) == JumpPress::single);
+  CHECK(key.Update(true, 100, 0, 1) == JumpPress::none);
+  CHECK(key.Update(false, 150, 0, 1) == JumpPress::none);
+  CHECK(key.Update(true, 250, 0, 1) == JumpPress::route);
+  CHECK(key.Update(true, 300, 0, 1) == JumpPress::none);
+  CHECK(key.Update(false, 350, 0, 1) == JumpPress::none);
+  CHECK(key.Update(true, 400, 0, 1) == JumpPress::single);
+  CHECK(key.Update(false, 450, 0, 1) == JumpPress::none);
+  CHECK(key.Update(true, 1000, 0, 1) == JumpPress::single);
+}
+
+TEST_CASE("jump double press cannot cross a navigation change or modal",
+          "[jump-controls]") {
+  JumpKeyControl key;
+  REQUIRE(key.Update(true, 0, 0, 1) == JumpPress::single);
+  REQUIRE(key.Update(false, 50, 0, 1) == JumpPress::none);
+  SECTION("new destination") {
+    CHECK(key.Update(true, 100, 0, 2) == JumpPress::single);
+  }
+  SECTION("new system") {
+    CHECK(key.Update(true, 100, 1, 2) == JumpPress::single);
+  }
+  SECTION("steering, cancellation or modal") {
+    key.CancelPending();
+    CHECK(key.Update(true, 100, 0, 1) == JumpPress::single);
+  }
+}
 
 namespace {
 GameState AutomationState() {
@@ -25,6 +60,86 @@ GameState AutomationState() {
   return state;
 }
 } // namespace
+
+TEST_CASE("auto-mine selects mining secondary, gates range and collects its "
+          "own yield",
+          "[mining][automation]") {
+  auto state = AutomationState();
+  state.scenario.ships.resize(1);
+  auto &cls = state.scenario.ships[0];
+  cls.cargo_holds = 100;
+  cls.turn_rate = 40;
+  cls.accel = 500;
+  state.player.ship_class_id = 0;
+  state.player.armor_points = 100;
+  state.player.active_weapon_bank_slot = -1;
+  state.scenario.outfits.resize(1);
+  state.scenario.outfits[0].mod_type = 0x1f;
+  state.inventory.outfit_owned_count[0] = 1;
+  state.scenario.weapons.resize(1);
+  auto &weapon = state.scenario.weapons[0];
+  weapon.flags = 2;
+  weapon.flags_secondary = 0x8000;
+  weapon.weapon_mode_code = -1;
+  weapon.ammo_type = -1;
+  weapon.range_scalar = 120;
+  weapon.projectile_speed = 600;
+  state.player.weapon_banks[0].mounted = 6;
+  auto &rock = state.asteroid_pool[0];
+  rock.active = true;
+  rock.mining_group = 42;
+  rock.target_pos_y = -300;
+  rock.integrity = 60;
+  FlightAutomationController controller;
+  REQUIRE(controller.MineAsteroid(state, 0, 0));
+  FlightInput input;
+  controller.Tick(state, 1, input);
+  input = {};
+  controller.Tick(state, 2, input);
+  CHECK(input.cycle_secondary);
+  state.player.active_weapon_bank_slot = 0;
+  input = {};
+  controller.Tick(state, 3, input);
+  CHECK(input.thrust);
+  CHECK_FALSE(input.fire_secondary);
+  rock.target_pos_y = -45;
+  input = {};
+  controller.Tick(state, 4, input);
+  CHECK(input.fire_secondary);
+  rock.active = false;
+  auto &cargo = state.freeflight_objects[0];
+  cargo.persistent = true;
+  cargo.lifetime_ticks = 300;
+  cargo.system_id = 0;
+  cargo.mining_group = 42;
+  cargo.pos_y = -35;
+  input = {};
+  controller.Tick(state, 5, input);
+  CHECK(controller.Mining());
+  CHECK_FALSE(input.fire_secondary);
+  CHECK(input.thrust);
+  // A recycled slot with a different group's cargo cannot keep the job alive.
+  cargo.mining_group = 43;
+  input = {};
+  controller.Tick(state, 6, input);
+  CHECK(controller.status().phase == FlightAutomationPhase::kComplete);
+  rock.active = true;
+  REQUIRE(controller.MineAsteroid(state, 0, 7));
+  state.inventory.cargo_bins[0] = 100;
+  input = {};
+  controller.Tick(state, 8, input);
+  CHECK(controller.status().phase == FlightAutomationPhase::kFailed);
+  CHECK_FALSE(input.fire_secondary);
+  state.inventory.cargo_bins[0] = 0;
+  REQUIRE(controller.MineAsteroid(state, 0, 9));
+  controller.Cancel();
+  input = {};
+  controller.Tick(state, 10, input);
+  CHECK_FALSE(input.thrust);
+  CHECK_FALSE(input.fire_secondary);
+  state.inventory.outfit_owned_count[0] = 0;
+  CHECK_FALSE(controller.MineAsteroid(state, 0, 11));
+}
 
 TEST_CASE(
     "automation resolves current-system stellars and direct links exactly") {
@@ -78,10 +193,84 @@ TEST_CASE("automation edge commands include a release frame") {
   REQUIRE(automation.JumpTo(state, "Alpha Centauri", 0));
   FlightInput first;
   automation.Tick(state, 0, first);
-  CHECK(first.hyperspace_mode);
+  CHECK(first.cycle_destination_next);
+  CHECK(first.quiet_navigation);
+  CHECK_FALSE(first.hyperspace_mode);
   FlightInput release;
   automation.Tick(state, 1, release);
-  CHECK_FALSE(release.hyperspace_mode);
+  CHECK_FALSE(release.cycle_destination_next);
+}
+
+TEST_CASE("blocked manual jump flies out before issuing the normal jump") {
+  GameState state = AutomationState();
+  state.scenario.ships.resize(1);
+  state.scenario.ships[0].base_fuel = 200;
+  state.player.ship_class_id = 0;
+  state.player.fuel_points = 200;
+  state.scenario.systems[1].is_visible = true;
+  // Plotting on the map arms travel mode 3 while this HUD flag can remain
+  // false. The assist must not send H and get stuck reopening the overlay.
+  state.travel.hyperspace_mode = false;
+  state.player.travel_transfer_mode = 3;
+  state.travel.travel_slot = 0;
+  state.travel.destination_system_id = 1;
+  state.travel.starmap_destination_system_id = 1;
+  FlightAutomationController automation;
+  REQUIRE_FALSE(NovaTravel_PlayerInJumpRange(state));
+
+  SECTION("flies clear and then jumps, completing at the destination") {
+    REQUIRE(automation.AssistBlockedJump(state, 0));
+    FlightInput input;
+    automation.Tick(state, 1, input);
+    CHECK(input.thrust);
+    CHECK_FALSE(input.travel);
+    CHECK_FALSE(input.hyperspace_mode);
+    state.player.pos_y = -1100;
+    REQUIRE(NovaTravel_PlayerInJumpRange(state));
+    input = {};
+    automation.Tick(state, 2, input);
+    CHECK(input.travel);
+    CHECK_FALSE(input.hyperspace_mode);
+    state.travel.engaging = true;
+    input = {};
+    automation.Tick(state, 3, input);
+    CHECK_FALSE(input.travel);
+    CHECK(automation.status().phase == FlightAutomationPhase::kWaiting);
+    state.travel.engaging = false;
+    state.player.current_system_id = 1;
+    automation.Tick(state, 4, input);
+    CHECK(automation.status().phase == FlightAutomationPhase::kComplete);
+  }
+  SECTION("a stale previous destination does not cycle or reopen navigation") {
+    state.travel.destination_system_id = -1;
+    REQUIRE(automation.AssistBlockedJump(state, 0));
+    FlightInput input;
+    automation.Tick(state, 1, input);
+    CHECK(input.thrust);
+    CHECK_FALSE(input.cycle_destination_next);
+    CHECK_FALSE(input.hyperspace_mode);
+    CHECK_FALSE(input.starmap);
+  }
+  SECTION("cancellation gives control back immediately") {
+    REQUIRE(automation.AssistBlockedJump(state, 0));
+    automation.Cancel();
+    FlightInput input;
+    automation.Tick(state, 1, input);
+    CHECK_FALSE(input.thrust);
+    CHECK_FALSE(input.travel);
+  }
+  SECTION("no fuel keeps the normal denial") {
+    state.player.fuel_points = 0;
+    CHECK_FALSE(automation.AssistBlockedJump(state, 0));
+  }
+  SECTION("no destination keeps the normal denial") {
+    state.travel.starmap_destination_system_id = -1;
+    CHECK_FALSE(automation.AssistBlockedJump(state, 0));
+  }
+  SECTION("being clear already keeps the normal jump") {
+    state.player.pos_y = -1100;
+    CHECK_FALSE(automation.AssistBlockedJump(state, 0));
+  }
 }
 
 // Runs MoveToAndStopAt against the real free-flight integrator (no gravity) and
@@ -246,6 +435,48 @@ TEST_CASE("automation land tap waits for the real per-axis envelope") {
   input = {};
   automation.Tick(state, 16, input);
   CHECK(automation.status().phase == FlightAutomationPhase::kEngage);
+  CHECK(input.land);
+}
+
+TEST_CASE("completed auto-docking never re-arms landing after launch") {
+  GameState state = AutomationState();
+  state.scenario.stellars[0].is_available = true;
+  state.scenario.stellars[0].system_id = 0;
+  state.travel.selected_stellar_id = 0x80;
+  state.travel.engage_timer = 0x2ee;
+  FlightAutomationController automation;
+  REQUIRE(automation.LandAt(state, "Earth", 0));
+  SECTION("autopilot issued the landing command") {
+    FlightInput input;
+    automation.Tick(state, 1, input);
+    REQUIRE(input.land);
+  }
+  SECTION("player landed before autopilot finished approaching") {
+    state.player.pos_x = 1000;
+    FlightInput input;
+    automation.Tick(state, 1, input);
+    REQUIRE(automation.status().phase == FlightAutomationPhase::kMove);
+  }
+  // This arrival notification comes directly from the game, with no probe.
+  automation.ObservedDocked();
+  REQUIRE(automation.status().phase == FlightAutomationPhase::kComplete);
+  // Launch clears the stellar selection and leaves the ship near the port.
+  state.travel.selected_stellar_id = -1;
+  state.player.pos_x = 0;
+  for (std::uint64_t tick = 2; tick < 302; ++tick) {
+    FlightInput input;
+    automation.Tick(state, tick * 33, input);
+    CHECK_FALSE(input.land);
+    CHECK_FALSE(input.cycle_target_next);
+    CHECK_FALSE(input.thrust);
+    CHECK_FALSE(input.turn_left);
+    CHECK_FALSE(input.turn_right);
+  }
+  // A later explicit docking request is still allowed.
+  REQUIRE(automation.LandAt(state, "Earth", 10000));
+  state.travel.selected_stellar_id = 0x80;
+  FlightInput input;
+  automation.Tick(state, 10001, input);
   CHECK(input.land);
 }
 
@@ -453,4 +684,128 @@ TEST_CASE("automation fails on death and simulation deadline") {
   state.game_over_pending = true;
   automation.Tick(state, 20, input);
   CHECK(automation.status().phase == FlightAutomationPhase::kFailed);
+}
+
+namespace {
+GameState RouteState() {
+  auto state = AutomationState();
+  state.scenario.ships.resize(1);
+  state.scenario.ships[0].base_fuel = 300;
+  state.scenario.ships[0].base_armor = 100;
+  state.player.armor_points = 100;
+  state.player.ship_class_id = 0;
+  state.player.fuel_points = 300;
+  for (auto &system : state.scenario.systems) {
+    system.is_visible = true;
+    system.has_explored_flag = true;
+    system.discovery_state = 1;
+  }
+  state.scenario.systems[1].links[0] = 0x82;
+  REQUIRE(PlotShortestStarmapRoute(state, 2));
+  return state;
+}
+
+void Arrive(GameState &state, std::int16_t id) {
+  state.travel.engaging = false;
+  state.player.current_system_id = id;
+  state.player.fuel_points -= kJumpFuelCost;
+  NovaStarmap_NormalizeRouteToCurrentSystem(state);
+  NovaStarmap_SyncTravelSelectionFromRoute(state);
+}
+} // namespace
+
+TEST_CASE("route autopilot departs and continues after each normal arrival",
+          "[route-autopilot]") {
+  auto state = RouteState();
+  FlightAutomationController pilot;
+  REQUIRE(pilot.FollowRoute(state, 0));
+  FlightInput input;
+  pilot.Tick(state, 1, input);
+  CHECK(input.thrust);
+  CHECK_FALSE(input.travel);
+  state.player.pos_y = -1500;
+  input = {};
+  pilot.Tick(state, 2, input);
+  CHECK(input.travel);
+  state.travel.engaging = true;
+  input = {};
+  pilot.Tick(state, 3, input);
+  CHECK_FALSE(input.travel);
+  Arrive(state, 1);
+  state.arrival_command_grace_frames = 2;
+  pilot.Tick(state, 4, input);
+  CHECK_FALSE(input.travel);
+  state.arrival_command_grace_frames = 0;
+  pilot.Tick(state, 5, input);
+  CHECK(input.travel);
+  CHECK_FALSE(input.starmap);
+  CHECK_FALSE(input.hyperspace_mode);
+  Arrive(state, 2);
+  input = {};
+  pilot.Tick(state, 6, input);
+  CHECK(pilot.status().phase == FlightAutomationPhase::kComplete);
+  CHECK_FALSE(pilot.FollowingRoute());
+  CHECK_FALSE(input.travel);
+}
+
+TEST_CASE("route autopilot stops without losing the plan",
+          "[route-autopilot]") {
+  auto state = RouteState();
+  FlightAutomationController pilot;
+  REQUIRE(pilot.FollowRoute(state, 0));
+  SECTION("fuel exhaustion between legs") {
+    Arrive(state, 1);
+    state.player.fuel_points = 0;
+    FlightInput input;
+    pilot.Tick(state, 1, input);
+    CHECK(pilot.status().phase == FlightAutomationPhase::kFailed);
+    CHECK(pilot.status().detail.find("refuel") != std::string::npos);
+    CHECK_FALSE(input.travel);
+    CHECK_FALSE(input.thrust);
+    CHECK(state.travel.starmap_route[1] == 2);
+    state.player.fuel_points = 100;
+    REQUIRE(pilot.FollowRoute(state, 2));
+    input = {};
+    pilot.Tick(state, 3, input);
+    CHECK(pilot.FollowingRoute());
+    return;
+  }
+  SECTION("manual cancellation") { pilot.Cancel(); }
+  SECTION("cleared route") { NovaStarmap_ClearRoute(state); }
+  SECTION("invalidated link") { state.scenario.systems[1].is_visible = false; }
+  SECTION("disabled ship") { state.player.armor_points = 0; }
+  SECTION("departure timeout") {
+    FlightInput input;
+    pilot.Tick(state, 180001, input);
+    CHECK_FALSE(pilot.FollowingRoute());
+    CHECK_FALSE(input.travel);
+    return;
+  }
+  FlightInput input;
+  pilot.Tick(state, 3, input);
+  CHECK_FALSE(pilot.FollowingRoute());
+  CHECK_FALSE(input.travel);
+  CHECK_FALSE(input.thrust);
+}
+
+TEST_CASE("route autopilot can join its first jump already in progress",
+          "[route-autopilot]") {
+  auto state = RouteState();
+  FlightAutomationController pilot;
+  state.travel.engaging = true;
+  state.travel.destination_system_id = 1;
+  REQUIRE(pilot.FollowRoute(state, 0));
+  FlightInput input;
+  pilot.Tick(state, 1, input);
+  CHECK(pilot.status().phase == FlightAutomationPhase::kWaiting);
+  CHECK_FALSE(input.travel);
+  CHECK_FALSE(input.thrust);
+  Arrive(state, 1);
+  pilot.Tick(state, 2, input);
+  CHECK(pilot.FollowingRoute());
+  CHECK_FALSE(input.thrust);
+  CHECK(input.travel);
+  state.travel.engaging = true;
+  state.travel.destination_system_id = 0;
+  CHECK_FALSE(pilot.FollowRoute(state, 3));
 }

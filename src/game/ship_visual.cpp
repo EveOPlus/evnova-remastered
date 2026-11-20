@@ -124,6 +124,8 @@ DecodeShipVisualDescriptor(std::span<const std::byte> resource_data) {
 // a small random hull offset (randomly silent). The scatter extent is the
 // class's decoded sh\x8an BaseYSize (the runtime sprite frame height) times
 // g_death_puff_offset_scale_f64 (0.25).
+// Fold/unfold animation runs in NovaShip_TickSpriteAnimation; the Flags 0x2
+// branch is required to release the player's weapon-fire gate.
 void NovaShip_TickDestroyedDebrisPuffs(GameState &state, Ship &ship) {
   // g_destroyed_finale_threshold (0x0057531c) = 2.0: at or below it the
   // finale owns the frame.
@@ -498,47 +500,46 @@ void NovaShip_TickSpriteAnimation(GameState &state,
           }
           // Flags 0x0004 (carry) needs no per-frame state: the row follows the
           // launch-bay ammo at draw time (ComposeShipBaseRow).
-        } else {
-          // Flags 0x0002 fold/unfold. waypoint_arrival_marker_a < 0 folds
-          // (marker_b counts down), marker_a >= 1 unfolds (marker_b counts up),
-          // and marker_a == 0 parks at the current row.
-          if (ship.waypoint_arrival_marker_a < 1) {
-            if (ship.waypoint_arrival_marker_a < 0) {
-              ship.turn_bank_animation_phase += scale;
-              if (dwell_f < ship.turn_bank_animation_phase) {
-                ship.turn_bank_animation_phase = 0.0F;
-                ship.waypoint_arrival_marker_b = static_cast<std::int16_t>(
-                    ship.waypoint_arrival_marker_b - 1);
-                if (ship.waypoint_arrival_marker_b < 1) {
-                  ship.waypoint_arrival_marker_b = 0;
-                  ship.waypoint_arrival_marker_a = 0;
-                }
-              }
-            } else {
-              ship.turn_bank_animation_phase = 0.0F;
-            }
-          } else {
+        }
+      } else {
+        // Flags 0x0002 fold/unfold. waypoint_arrival_marker_a < 0 folds
+        // (marker_b counts down), marker_a >= 1 unfolds (marker_b counts up),
+        // and marker_a == 0 parks at the current row.
+        if (ship.waypoint_arrival_marker_a < 1) {
+          if (ship.waypoint_arrival_marker_a < 0) {
             ship.turn_bank_animation_phase += scale;
             if (dwell_f < ship.turn_bank_animation_phase) {
               ship.turn_bank_animation_phase = 0.0F;
               ship.waypoint_arrival_marker_b =
-                  static_cast<std::int16_t>(ship.waypoint_arrival_marker_b + 1);
-              if (cls->animation_cycle_count <=
-                  ship.waypoint_arrival_marker_b) {
-                ship.waypoint_arrival_marker_b =
-                    static_cast<std::int16_t>(cls->animation_cycle_count - 1);
+                  static_cast<std::int16_t>(ship.waypoint_arrival_marker_b - 1);
+              if (ship.waypoint_arrival_marker_b < 1) {
+                ship.waypoint_arrival_marker_b = 0;
                 ship.waypoint_arrival_marker_a = 0;
               }
             }
+          } else {
+            ship.turn_bank_animation_phase = 0.0F;
           }
-          // Flags 0x0080: re-trigger the unfold once the ship has gone 45
-          // ticks (0x2d) without firing and is not already fully unfolded.
-          if ((flags & 0x0080U) != 0U && ship.waypoint_arrival_marker_a < 1 &&
-              ship.waypoint_arrival_marker_b <
-                  static_cast<std::int16_t>(cls->animation_cycle_count - 1) &&
-              ship.last_weapon_fire_time_ms + 0x2dU <= state.tick_60hz) {
-            ship.waypoint_arrival_marker_a = 1;
+        } else {
+          ship.turn_bank_animation_phase += scale;
+          if (dwell_f < ship.turn_bank_animation_phase) {
+            ship.turn_bank_animation_phase = 0.0F;
+            ship.waypoint_arrival_marker_b =
+                static_cast<std::int16_t>(ship.waypoint_arrival_marker_b + 1);
+            if (cls->animation_cycle_count <= ship.waypoint_arrival_marker_b) {
+              ship.waypoint_arrival_marker_b =
+                  static_cast<std::int16_t>(cls->animation_cycle_count - 1);
+              ship.waypoint_arrival_marker_a = 0;
+            }
           }
+        }
+        // Flags 0x0080: re-trigger the unfold once the ship has gone 45
+        // ticks (0x2d) without firing and is not already fully unfolded.
+        if ((flags & 0x0080U) != 0U && ship.waypoint_arrival_marker_a < 1 &&
+            ship.waypoint_arrival_marker_b <
+                static_cast<std::int16_t>(cls->animation_cycle_count - 1) &&
+            ship.last_weapon_fire_time_ms + 0x2dU <= state.tick_60hz) {
+          ship.waypoint_arrival_marker_a = 1;
         }
       }
       // Flags 0x0001 (banking) needs no per-frame state: ai_turn_bias_dir is

@@ -38,6 +38,7 @@ TEST_CASE("extra prefs parse the display section and fall back on bad values") {
                         "[display]\n"
                         "ui_scale=2\n"
                         "flight_scene_scale=1.5\n"
+                        "radar_zoom=2.5\n"
                         "mission_scale=bogus\n"
                         "run_in_window=0\n"
                         "unknown_key=7\n");
@@ -47,6 +48,7 @@ TEST_CASE("extra prefs parse the display section and fall back on bad values") {
   REQUIRE(prefs.install_root->generic_string() == "/games/EV Nova");
   REQUIRE(prefs.scale.ui == 2.0F);
   REQUIRE(prefs.scale.flight_scene == 1.5F);
+  REQUIRE(prefs.scale.radar == 2.5F);
   REQUIRE(prefs.scale.mission == 1.0F); // invalid -> fallback
   REQUIRE_FALSE(prefs.run_in_window);
 }
@@ -72,7 +74,7 @@ TEST_CASE("extra prefs parse the bug-fix flags and fall back on bad values") {
 TEST_CASE("extra prefs write and reparse every field") {
   NovaExtraPrefs prefs;
   prefs.install_root = std::filesystem::path{"/tmp/EV Nova"};
-  prefs.scale = {1.25F, 2.0F, 0.75F};
+  prefs.scale = {1.25F, 2.0F, 0.75F, 3.0F};
   prefs.bugfixes.safe = false;
   prefs.bugfixes.outfit_slot_balance = false;
   prefs.bugfixes.outfit_prices = true;
@@ -91,6 +93,7 @@ TEST_CASE("extra prefs write and reparse every field") {
   REQUIRE(parsed.scale.ui == 1.25F);
   REQUIRE(parsed.scale.flight_scene == 2.0F);
   REQUIRE(parsed.scale.mission == 0.75F);
+  REQUIRE(parsed.scale.radar == 3.0F);
   REQUIRE(parsed.bugfixes.safe == prefs.bugfixes.safe);
   REQUIRE(parsed.bugfixes.outfit_slot_balance ==
           prefs.bugfixes.outfit_slot_balance);
@@ -128,4 +131,20 @@ TEST_CASE("mission dialogs compose ui and mission on top of each other") {
   // Mission dialogs are authored UI, so the flight factor never enters.
   const PresentationScale flight_only{1.0F, 3.0F, 1.0F};
   REQUIRE(flight_only.mission_dialog() == 1.0F);
+}
+
+TEST_CASE("Remastered graphics defaults on for existing profiles and remembers "
+          "classic mode") {
+  game::NovaExtraPrefs prefs;
+  std::istringstream legacy("ui_scale=2\n");
+  game::NovaExtraPrefs_Parse(legacy, prefs, "legacy");
+  CHECK(prefs.remastered_graphics);
+  CHECK(prefs.scale.ui == 2.0F);
+  prefs.remastered_graphics = false;
+  std::ostringstream saved;
+  game::NovaExtraPrefs_Write(saved, prefs);
+  std::istringstream reload(saved.str());
+  game::NovaExtraPrefs_Parse(reload, prefs, "reload");
+  CHECK_FALSE(prefs.remastered_graphics);
+  CHECK(prefs.scale.ui == 2.0F);
 }

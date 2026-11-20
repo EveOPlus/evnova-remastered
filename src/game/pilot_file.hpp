@@ -298,6 +298,12 @@ PilotFileDeserialize(std::span<const std::byte> bytes, PilotFile &out);
                                      const GameState &state,
                                      std::int16_t jump_dest_stellar);
 
+// Save the same pilot format to an exact user-selected filename. The Last
+// Pilot marker stays in the active campaign's normal Pilots folder.
+[[nodiscard]] bool PilotFileSaveGameToPath(const std::filesystem::path &path,
+                                           const GameState &state,
+                                           std::int16_t jump_dest_stellar);
+
 // Load an explicit .plt path into the live state. Mirrors PilotFile_LoadSave
 // (0x004cb260) including deriving the pilot name from the file name (substring
 // after the last ':', extension stripped). Returns PilotLoadError (kOk on

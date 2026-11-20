@@ -12,6 +12,7 @@ TEST_CASE("main-menu command tokens map to their mode actions") {
   using enum GameModeAction;
   CHECK(NovaCommand_DispatchToMode('n') == std::optional{new_game});
   CHECK(NovaCommand_DispatchToMode('o') == std::optional{open_pilot});
+  CHECK(NovaCommand_DispatchToMode('s') == std::optional{save_pilot});
   CHECK(NovaCommand_DispatchToMode('e') == std::optional{enter_spaceflight});
   CHECK(NovaCommand_DispatchToMode('p') == std::optional{preferences});
   CHECK(NovaCommand_DispatchToMode('a') == std::optional{about_nova});

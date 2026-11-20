@@ -50,7 +50,8 @@ constexpr std::int32_t RingSpread(std::int32_t radius) {
 
 } // namespace
 
-// @port 0x00421e60 40% gameplay
+// @port 0x00421e60 40% gameplay,divergence
+// DIVERGENCE(original): mining_group is session-only identity for auto-mining.
 // TODO(decomp(0x00421e60)): the wander frame seed uses AsteroidDef.mass as a
 // stand-in; the original reads the sprite set's num_frames (+0x54).
 // Ghidra 0x00421e60 Asteroid_SpawnRecord.
@@ -71,6 +72,7 @@ int NovaAsteroid_SpawnRecord(GameState &state,
 
   AsteroidState &m = state.asteroid_pool[slot];
   m.active = true;
+  m.mining_group = state.next_mining_group++;
   m.wander_type = type;
   m.target_pos_x = pos_x;
   m.target_pos_y = pos_y;
@@ -106,7 +108,8 @@ int NovaAsteroid_SpawnRecord(GameState &state,
   return static_cast<int>(slot);
 }
 
-// @port 0x00421830 75% license,gameplay
+// @port 0x00421830 75% license,gameplay,divergence
+// DIVERGENCE(original): fresh mining_group values distinguish recycled slots.
 // Ghidra 0x00421830 Asteroid_Spawn: allocates
 // one asteroid / drift debris record into a free pool slot. `place_in_ring ==
 // 0` scatters the target around the player (a [-radius*0.5, +radius*0.5) band
@@ -156,6 +159,7 @@ int NovaAsteroid_Spawn(GameState &state, bool place_in_ring) {
   }
   AsteroidState &m = state.asteroid_pool[slot];
   m.active = true;
+  m.mining_group = state.next_mining_group++;
 
   const float px = state.player.pos_x;
   const float py = state.player.pos_y;

@@ -1,7 +1,7 @@
 # Trade Center (commodity exchange)
 
 Ghidra driver: `NovaUi_RunTradeCenterWindow` **0x0048c730**, dispatched from the Spaceport
-loop `0x00491f30` action `7` when `Stellar.travel_flags & 0x2`.
+loop `0x00491f30` action `7` when `Stellar.flags & 0x2` (the original travel_flags field).
 
 Supporting functions: input `0x0048d190` `NovaUi_HandleTradeCenterInput`,
 redraw `0x0048d6f0` `NovaUi_RedrawTradeCenterWindow`, selection cycler
@@ -50,6 +50,27 @@ Buy and Sell both use the single local price (no spread). Plain action moves
   the Spaceport.
 
 ## Gaps
+
+The remake's `system_markets.*` adds a read-only comparison of all commodity
+exchanges in the current system. It reuses `NovaTradeCenter_OpenSession` for
+both ordinary and special cargo; it does not enter a mission-offer context or
+reimplement pricing. Open it from the empty-space or stellar radial menu.
+`BuildSystemMarketGoods` unions all markets' ordinary and special-cargo rows
+with held cargo. Goods are rows, markets are columns, and Tons shows held
+quantities. Locally unavailable cargo has no price; mission freight is listed
+separately and marked non-tradable. Duplicate offers for the same junk ID
+retain their price range. Goods and markets paginate independently.
+Carried names, quantities and price cells are bold.
+Carried items use green for high sell prices and red for low ones; unheld
+items retain green low/gold high buying cues. Strong shades indicate local
+extrema (only when prices differ), softer shades indicate prices below/above
+the normal commodity/junk base price, including disaster-adjusted values.
+Special cargo comparisons match junk IDs across both per-port slots.
+Auto Dock returns the selected raw stellar ID to the flight loop, which starts
+the same input-producing landing controller as radial docking. Merely browsing
+or closing the comparison changes no destination. Disabled-ship checks and
+normal landing restrictions still apply; steering cancels the approach.
+
 - Nested Starmap / Player Info / Mission Computer actions are `TODO(decomp)`.
 - Footer `Other cargo:` mission-cargo clause is simplified to the free-space
   line; the original summary's filled-rect + `InvertRect` composition and

@@ -35,6 +35,7 @@ struct NovaExtraPrefs {
   // this INI instead. Seeded into NovaPreferences::run_in_window at startup and
   // written back when the Settings dialog commits.
   bool run_in_window = true;
+  bool remastered_graphics = true;
 };
 
 // The INI path under the support folder, or nullopt if it cannot be resolved.

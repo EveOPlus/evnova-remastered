@@ -1639,7 +1639,9 @@ void ResolveShotCollisionHit(GameState &state,
   state.active_shots[shot_index].consumed = true;
 }
 
-// @port 0x00462550 90% rng,bugfix
+// @port 0x00462550 90% rng,bugfix,divergence
+// DIVERGENCE(original): fragments/yield inherit a session-only mining identity;
+// it does not affect resource rolls, collision, lifespan or cargo rules.
 // Ghidra Asteroid_SpawnDestructionPackage (0x00462550): a broken asteroid
 // spawns YieldQty resource-box freeflight objects, a part_count debris burst,
 // its explode_type area effect, and splits into child asteroids from its def
@@ -1674,7 +1676,8 @@ void ResolveAsteroidDestructionPackage(GameState &state,
           asteroid.target_pos_x,
           asteroid.target_pos_y,
           def->yield_type,
-          static_cast<std::int16_t>((asteroid.wander_type >> 2) + 1));
+          static_cast<std::int16_t>((asteroid.wander_type >> 2) + 1),
+          asteroid.mining_group);
     }
   }
   // Debris SWParticle burst (part_count, part_color).
@@ -1727,8 +1730,11 @@ void ResolveAsteroidDestructionPackage(GameState &state,
       } else if (def->frag_type1 == -1) {
         child_type = def->frag_type2;
       }
-      (void)NovaAsteroid_SpawnRecord(
+      const int child = NovaAsteroid_SpawnRecord(
           state, asteroid.target_pos_x, asteroid.target_pos_y, child_type);
+      if (child >= 0)
+        state.asteroid_pool[static_cast<std::size_t>(child)].mining_group =
+            asteroid.mining_group;
     }
   }
   asteroid.active = false;

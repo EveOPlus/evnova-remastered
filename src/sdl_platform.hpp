@@ -16,6 +16,7 @@
 #include "probe_server.hpp"
 #include "util/placement.hpp"
 
+#include "game/mission_narration.hpp"
 #include "game/presentation_scale.hpp"
 
 void ApplyPlacementToRenderer(SDL_Renderer *renderer,
@@ -41,6 +42,9 @@ enum class TextKey {
   // OK/default handling). The menu's PollCommandEvent channel reports the same
   // press as 'm'.
   primary,
+  // Right-button release, used by the remake's hold-to-select radial menu.
+  secondary_released,
+  wheel,
 };
 
 struct TextInput {
@@ -61,6 +65,7 @@ struct TextInput {
   // can ignore this; it exists for callers that must not re-fire a one-shot
   // action while a key is held.
   bool repeat = false;
+  float wheel_y = 0;
 };
 
 // Continuous flight-input snapshot polled once per frame from the live
@@ -105,6 +110,8 @@ struct FlightInput {
   // Edge-triggered travel engage: binding slot 0x0e (default DIK 0x24 = J),
   // hyperspace jump toward the nearest available travel point.
   bool travel = false;
+  // Autopilot destination selection should not open the route-map overlay.
+  bool quiet_navigation = false;
   // Edge-triggered galaxy-map command: binding slot 0x09 (default DIK 0x32 =
   // M) opens the starmap modal. Mirrors the original's map command checked by
   // Ship_HandlePlayerShip (0x0044b120).
@@ -192,6 +199,9 @@ struct FlightInput {
   // click-to-target ship picking. The flight-exit/cancel command is polled
   // through the persisted binding table (slot 0x17), not a raw Escape latch.
   bool primary_clicked = false;
+  bool primary_held = false;
+  bool secondary_clicked = false;
+  float scene_zoom_delta = 0.0F;
   // mouse_x/y are in the active placement's authored space (mapped at poll
   // time). Consumers that own a different target placement must use the raw
   // window-point snapshot below instead: input is polled before DrawGameFrame
@@ -226,9 +236,12 @@ private:
 
 class SdlPlatform {
 public:
+  enum class PilotFileDialogMode { open, save };
+
   struct OpenFileDialogResult {
     std::optional<std::filesystem::path> path;
     std::string error;
+    PilotFileDialogMode mode = PilotFileDialogMode::open;
   };
 
   SdlPlatform() = default;
@@ -249,7 +262,10 @@ public:
   // SDL3's native chooser is asynchronous and may invoke its callback from a
   // worker thread. Results are copied into platform-owned state and consumed
   // by the main loop through PollOpenFileDialogResult.
-  [[nodiscard]] bool ShowOpenPilotFileDialog();
+  [[nodiscard]] bool
+  ShowOpenPilotFileDialog(const std::filesystem::path &directory);
+  [[nodiscard]] bool
+  ShowSavePilotFileDialog(const std::filesystem::path &default_file);
   // Native file chooser for pointing the game at an EV Nova install. SDL
   // cannot offer files and folders in one native dialog (the Cocoa folder
   // picker sets canChooseFiles:NO), so this is an unfiltered file dialog: the
@@ -314,6 +330,7 @@ public:
   // not update that state, so a /probe/click stays a discrete click and never
   // reports as held (see docs/probe_harness.md).
   [[nodiscard]] bool PrimaryMouseDown() const;
+  [[nodiscard]] bool MouseButtonDown(std::uint8_t button) const;
 
   // Frame-boundary hook: captures a pending probe screenshot (while the
   // current frame is still the active render target), counts step frames,
@@ -325,12 +342,17 @@ public:
   // docs/probe_harness.md; NovaApp_Run registers the state provider here.
   [[nodiscard]] ProbeServer &probe() { return probe_; }
 
+  game::MissionNarrator &narrator();
+  [[nodiscard]] SDL_FPoint dialog_content_size() const;
+
   // UI layout registry: the active modal publishes its named control rects
   // (window-point space) so the harness can click by intent. No-op without
   // the harness; pair with ProbeUiAutoClear so a closing modal leaves nothing
   // stale.
   void PublishProbeUi(std::string window_name,
                       std::vector<std::pair<std::string, SDL_FRect>> rects) {
+    if (narrator_)
+      narrator_->AddControls(*this, rects);
     std::vector<ProbeNamedRect> named;
     named.reserve(rects.size());
     for (auto &entry : rects) {
@@ -370,9 +392,19 @@ public:
   // Port-only presentation multipliers, set once at startup from the resolved
   // extra prefs. Authored UI compositions request `ui_scale()`; the flight
   // scene and mission dialogs use the other factors.
+  void SetRemasteredGraphics(bool enabled) { remastered_graphics_ = enabled; }
+
+  [[nodiscard]] bool remastered_graphics() const {
+    return remastered_graphics_;
+  }
+
   void SetPresentationScale(const game::PresentationScale &scale) {
     presentation_scale_ = scale;
   }
+
+  void SetMoviesEnabled(bool enabled) { movies_enabled_ = enabled; }
+
+  [[nodiscard]] bool movies_enabled() const { return movies_enabled_; }
 
   [[nodiscard]] const game::PresentationScale &presentation_scale() const {
     return presentation_scale_;
@@ -384,6 +416,17 @@ public:
   // general UI scale. Kept as its own accessor so a dedicated HUD factor can
   // be added later without touching call sites.
   [[nodiscard]] float hud_scale() const { return presentation_scale_.ui; }
+
+  void SetRadarGeometry(SDL_FRect bounds, SDL_FRect frame) {
+    radar_bounds_ = bounds;
+    radar_frame_bounds_ = frame;
+  }
+
+  [[nodiscard]] SDL_FRect radar_bounds() const { return radar_bounds_; }
+
+  [[nodiscard]] SDL_FRect radar_frame_bounds() const {
+    return radar_frame_bounds_;
+  }
 
   [[nodiscard]] float flight_scene_scale() const {
     return presentation_scale_.flight_scene;
@@ -435,6 +478,7 @@ public:
   // to call at startup and every time the Settings checkbox is toggled. This
   // is independent of the active authored placement.
   void ApplyWindowMode(bool windowed);
+  [[nodiscard]] bool IsWindowed() const;
 
   // Raw mouse position in window coordinates (SDL window points).
   [[nodiscard]] SDL_FPoint mouse_window_point() const;
@@ -443,8 +487,12 @@ public:
   [[nodiscard]] SDL_FRect playfield_window_rect() const;
 
 private:
+  bool ShowPilotFileDialog(const std::filesystem::path &default_path,
+                           PilotFileDialogMode mode);
+  bool movies_enabled_ = true;
   void ApplyPlacement();
   void RefreshPlacementAfterResize();
+  bool HandlePresentationKey(const SDL_Event &event);
 
   [[nodiscard]] float WindowPixelDensity() const;
 
@@ -477,9 +525,13 @@ private:
   ProbeServer probe_;
   Placement placement_{};
   game::PresentationScale presentation_scale_{};
+  bool remastered_graphics_ = false;
+  std::unique_ptr<game::MissionNarrator> narrator_;
   std::vector<Placement> placement_stack_;
   SDL_FPoint mouse_position_{};
   SDL_FPoint mouse_window_point_{};
+  SDL_FRect radar_bounds_{};
+  SDL_FRect radar_frame_bounds_{};
   std::unique_ptr<SDL_Window, WindowDeleter> window_;
   std::unique_ptr<SDL_Renderer, RendererDeleter> renderer_;
   std::mutex open_file_dialog_mutex_;

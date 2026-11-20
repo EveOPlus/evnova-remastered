@@ -579,6 +579,53 @@ TEST_CASE("PilotFile load rejects missing/empty saves") {
   std::filesystem::remove(empty);
 }
 
+TEST_CASE(
+    "PilotFile saves to a chosen folder and filename and opens that file") {
+  const TemporaryDirectory temp{std::filesystem::temp_directory_path() /
+                                "evnova_save_as_test"};
+  const auto support = temp.path / "support";
+  const ScopedSupportDirectoryOverride support_override{support};
+  const auto exports = temp.path / "Chosen folder";
+  std::filesystem::create_directories(exports);
+  const auto path = exports / "My checkpoint.plt";
+  game::GameState state;
+  state.pilot.first_name = "Original Pilot";
+  state.player.credits = 54321;
+  state.player.fuel_points = 200;
+  REQUIRE(game::PilotFileSaveGameToPath(path, state, 0));
+  CHECK(std::filesystem::exists(path));
+  CHECK_FALSE(std::filesystem::exists(exports / "Original Pilot.plt"));
+  game::GameState loaded;
+  REQUIRE(PilotFileLoadSave(path, loaded) == PilotLoadError::kOk);
+  CHECK(loaded.player.credits == 54321);
+  CHECK(loaded.player.fuel_points == 200);
+  CHECK(loaded.pilot.first_name == "My checkpoint");
+  std::ifstream marker(support / "Pilots" / "Last Pilot", std::ios::binary);
+  std::string last_path;
+  std::getline(marker, last_path, '\0');
+  CHECK(last_path == path.string());
+  // A failed save does not replace the last successful path.
+  CHECK_FALSE(game::PilotFileSaveGameToPath(
+      temp.path / "missing" / "Cannot save.plt", state, 0));
+  std::ifstream preserved(support / "Pilots" / "Last Pilot", std::ios::binary);
+  std::getline(preserved, last_path, '\0');
+  CHECK(last_path == path.string());
+}
+
+TEST_CASE("PilotFile with no stellar destination preserves pilot progress") {
+  const PilotFile p = SampleRecord();
+  const auto bytes = PilotFileSerialize(p, -1);
+  PilotFile out;
+  REQUIRE(PilotFileDeserialize(bytes, out) == PilotLoadError::kOk);
+  CHECK(out.jump_dest_stellar == -1);
+  CHECK(out.credits == p.credits);
+  CHECK(out.ship_class_id == p.ship_class_id);
+  CHECK(out.fuel_points == 77.0F);
+  CHECK(out.player_combat_rating_points == p.player_combat_rating_points);
+  CHECK(out.date.year == p.date.year);
+  CHECK(out.outfit_owned_count == p.outfit_owned_count);
+}
+
 TEST_CASE("PilotFile load rejects wrong FleetState magic") {
   const PilotFile p = SampleRecord();
   auto bytes = PilotFileSerialize(p, p.jump_dest_stellar);

@@ -2122,28 +2122,21 @@ void Mission_ResolveMissionSuccess(GameState &state,
   const std::int16_t comp_text_id = mission.brief_description_ids[4];
   std::string comp_text;
   std::int16_t comp_variant = 0;
+  std::string comp_movie;
   if (comp_text_id != -1) {
     if (const auto desc = NovaResource_LoadDescription(
             static_cast<std::uint16_t>(comp_text_id))) {
       comp_text = desc->text;
       comp_variant = desc->dialog_variant;
-      if (!desc->status.empty()) {
-        // The trailing dësc status string is a QuickTime movie file name: the
-        // original plays it through Ui_PlayMovieFileModal (0x0049db00) when
-        // g_pref_quicktime_movies is on. The port defers the movie panel.
-        NovaLog::Todo("mission debrief desc {} status movie '{}' skipped "
-                      "(QuickTime movie panel unported)",
-                      comp_text_id,
-                      desc->status);
-      }
+      comp_movie = desc->status;
       Mission_ExpandStringPlaceholders(state, comp_text);
       comp_text =
           Mission_ExpandMissionWildcards(state, comp_text, false, mission_slot);
     }
   }
-  if (!comp_text.empty()) {
+  if (!comp_text.empty() || !comp_movie.empty()) {
     if (debrief) {
-      debrief(MissionDialogText{comp_text, comp_variant});
+      debrief(MissionDialogText{comp_text, comp_variant, comp_movie});
     } else {
       NovaLog::Todo("mission success debrief dialog (misn {} id {}) has no "
                     "UI sink",
@@ -2213,26 +2206,21 @@ void Mission_ResolveMissionFailure(GameState &state,
   const std::int16_t fail_text_id = mission.brief_description_ids[5];
   std::string fail_text;
   std::int16_t fail_variant = 0;
+  std::string fail_movie;
   if (fail_text_id != -1) {
     if (const auto desc = NovaResource_LoadDescription(
             static_cast<std::uint16_t>(fail_text_id))) {
       fail_text = desc->text;
       fail_variant = desc->dialog_variant;
-      if (!desc->status.empty()) {
-        // QuickTime status movie (Ui_PlayMovieFileModal 0x0049db00); deferred.
-        NovaLog::Todo("mission debrief desc {} status movie '{}' skipped "
-                      "(QuickTime movie panel unported)",
-                      fail_text_id,
-                      desc->status);
-      }
+      fail_movie = desc->status;
       Mission_ExpandStringPlaceholders(state, fail_text);
       fail_text =
           Mission_ExpandMissionWildcards(state, fail_text, false, mission_slot);
     }
   }
-  if (!fail_text.empty()) {
+  if (!fail_text.empty() || !fail_movie.empty()) {
     if (debrief) {
-      debrief(MissionDialogText{fail_text, fail_variant});
+      debrief(MissionDialogText{fail_text, fail_variant, fail_movie});
     } else {
       NovaLog::Todo("mission failure debrief dialog (misn {} id {}) has no "
                     "UI sink",

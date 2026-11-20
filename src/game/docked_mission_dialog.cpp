@@ -13,7 +13,9 @@
 #include "command_input.hpp"
 #include "hud_overlay.hpp"
 #include "mission.hpp"
+#include "mission_narration.hpp"
 #include "mission_script.hpp"
+#include "movie_player.hpp"
 #include "nova_font.hpp"
 #include "nova_list_control.hpp"
 #include "player_info_window.hpp"
@@ -363,12 +365,12 @@ void DrawMissionBbsBase(SdlPlatform &platform,
     // (deliberate divergence, see docs/dlog_ditl_dialog_format.md).
     render_background();
   } else {
-    platform.SetPlacement(PlaceWindow(platform.logical_playfield_size()));
+    platform.SetPlacement(PlaceWindow(platform.dialog_content_size()));
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
     SDL_RenderClear(renderer);
   }
   platform.SetPlacement(PlaceContained({layout.frame.w, layout.frame.h},
-                                       platform.logical_playfield_size(),
+                                       platform.dialog_content_size(),
                                        platform.ui_scale()));
   if (render_background == nullptr && backdrop != nullptr) {
     float width = 0.0F;
@@ -526,7 +528,7 @@ LandedExit RunMissionBbsWindow(SdlPlatform &platform,
     return LandedExit::kServiceComplete;
   }
   platform.SetPlacement(PlaceContained({layout->frame.w, layout->frame.h},
-                                       platform.logical_playfield_size(),
+                                       platform.dialog_content_size(),
                                        platform.ui_scale()));
   ProbeUiAutoClear probe_ui_guard(platform);
   MissionListEvaluation missions = Mission_EvaluateMissionLists(state);
@@ -596,7 +598,23 @@ LandedExit RunMissionBbsWindow(SdlPlatform &platform,
           ? -1
           : static_cast<int>(missions.page_zero.front()));
 
+  MissionNarrationScope narration(platform);
+  std::optional<std::size_t> narrated_selection;
   while (!platform.quit_requested()) {
+    if (narrated_selection != selected) {
+      narrated_selection = selected;
+      std::string spoken;
+      if (selected < missions.page_zero.size()) {
+        const auto id = missions.page_zero[selected];
+        if (const auto description = NovaResource_LoadDescription(
+                static_cast<std::uint16_t>(id + 4000))) {
+          spoken = description->text;
+          Mission_ExpandStringPlaceholders(state, spoken);
+          spoken = Mission_ExpandMissionWildcards(state, spoken, true, id);
+        }
+      }
+      narration.SetText(std::move(spoken));
+    }
     // @port 0x00440C90 72% ui
     // Ghidra 0x00440c90 (top of NovaUi_PollMissionBbsWindow): a mission
     // script's 'Q' stages g_pending_overlay_message; while it is non-empty
@@ -858,14 +876,15 @@ void NovaMission_RunAcceptanceDialogs(
                         static_cast<std::uint16_t>(def->initial_briefing_id),
                         false,
                         slot ? static_cast<std::int16_t>(*slot) : -1);
-    if (!message.text.empty()) {
+    if (!message.text.empty() || !message.movie.empty()) {
       NovaUi_RunTextReaderDialog(platform,
                                  state,
                                  message.text,
                                  true,
                                  render_background,
                                  message.dialog_variant,
-                                 /*mission_dialog=*/true);
+                                 /*mission_dialog=*/true,
+                                 message.movie);
     }
   }
   if (def->pickup_mode == 0 && def->text_description_ids[2] >= 0x80) {
@@ -874,14 +893,15 @@ void NovaMission_RunAcceptanceDialogs(
         static_cast<std::uint16_t>(def->text_description_ids[2]),
         false,
         slot ? static_cast<std::int16_t>(*slot) : -1);
-    if (!message.text.empty()) {
+    if (!message.text.empty() || !message.movie.empty()) {
       NovaUi_RunTextReaderDialog(platform,
                                  state,
                                  message.text,
                                  false,
                                  render_background,
                                  message.dialog_variant,
-                                 /*mission_dialog=*/true);
+                                 /*mission_dialog=*/true,
+                                 message.movie);
     }
   }
 }
@@ -939,6 +959,7 @@ NovaMission_RunOfferWindow(SdlPlatform &platform,
   if (const auto desc = NovaResource_LoadDescription(desc_id)) {
     text = desc->text;
     desc_variant = desc->dialog_variant;
+    (void)NovaMovie_Play(platform, desc->status);
     Mission_ExpandStringPlaceholders(state, text);
     text = Mission_ExpandMissionWildcards(state, text, true, mission_def);
   }
@@ -1069,6 +1090,8 @@ NovaMission_RunOfferWindow(SdlPlatform &platform,
 
   // Shared read-only text view (NovaTextView 0x004bcd90) over DITL entry 3.
   NovaTextScrollView view(font_cache, text, text_rect);
+  MissionNarrationScope narration(platform);
+  narration.SetText(text);
   // Auto-size arm (0x00442510 runs it before the button sizing): when the
   // wrapped text height (view +0x1c) is shorter than entry 3 and the 0x3f8
   // layout is in use, the measurement is clamped to 0x30 and
@@ -1111,7 +1134,7 @@ NovaMission_RunOfferWindow(SdlPlatform &platform,
       normal_arm ? accept_rect : cannot_refuse_rect;
 
   platform.SetPlacement(PlaceContained({win_w, win_h},
-                                       platform.logical_playfield_size(),
+                                       platform.dialog_content_size(),
                                        platform.mission_dialog_scale()));
 
   // Publish the window's control rects to the probe harness (window-point
@@ -1192,14 +1215,15 @@ NovaMission_RunOfferWindow(SdlPlatform &platform,
     if (def->slot_aux_text_id >= 0x80) {
       const MissionDialogText followup = LoadMissionText(
           state, static_cast<std::uint16_t>(def->slot_aux_text_id), false, -1);
-      if (!followup.text.empty()) {
+      if (!followup.text.empty() || !followup.movie.empty()) {
         NovaUi_RunTextReaderDialog(platform,
                                    state,
                                    followup.text,
                                    false,
                                    render_background,
                                    followup.dialog_variant,
-                                   /*mission_dialog=*/true);
+                                   /*mission_dialog=*/true,
+                                   followup.movie);
       }
     }
     Mission_ExecuteReactionScript(
@@ -1215,7 +1239,7 @@ NovaMission_RunOfferWindow(SdlPlatform &platform,
   // (possibly auto-sized) window, blits the main art below the top strip,
   // the top strip, and the bottom-anchored strip, all clipped to the window.
   auto draw_frame = [&]() {
-    platform.SetPlacement(PlaceWindow(platform.logical_playfield_size()));
+    platform.SetPlacement(PlaceWindow(platform.dialog_content_size()));
     SDL_SetRenderDrawColor(platform.renderer(), 0, 0, 0, SDL_ALPHA_OPAQUE);
     SDL_RenderClear(platform.renderer());
     if (render_background) {
@@ -1227,7 +1251,7 @@ NovaMission_RunOfferWindow(SdlPlatform &platform,
       DrawContainedPict(platform, backdrop->get());
     }
     platform.SetPlacement(PlaceContained({win_w, win_h},
-                                         platform.logical_playfield_size(),
+                                         platform.dialog_content_size(),
                                          platform.mission_dialog_scale()));
     // 0x00447680 fills the window with PTR_DAT_00575acc (black), then blits
     // the art clipped to the window.
@@ -1636,7 +1660,7 @@ void NovaMission_RunMissionInfoWindow(
     return;
   }
   platform.SetPlacement(PlaceContained({layout->frame.w, layout->frame.h},
-                                       platform.logical_playfield_size(),
+                                       platform.dialog_content_size(),
                                        platform.mission_dialog_scale()));
   ProbeUiAutoClear probe_ui_guard(platform);
   const auto publish_probe_ui = [&]() {
@@ -1721,7 +1745,7 @@ void NovaMission_RunMissionInfoWindow(
       SDL_RenderClear(renderer);
     }
     platform.SetPlacement(PlaceContained({layout->frame.w, layout->frame.h},
-                                         platform.logical_playfield_size(),
+                                         platform.dialog_content_size(),
                                          platform.mission_dialog_scale()));
     // DrawContext_BlitImageToRect(DAT_007742e4, UiWindow_GetRect(...)).
     if (frame != nullptr) {
@@ -1953,7 +1977,9 @@ void NovaMission_RunMissionInfoWindow(
     }
   };
 
+  MissionNarrationScope narration(platform);
   while (!platform.quit_requested() && !exit_requested) {
+    narration.SetText(description);
     draw_frame();
     const bool starmap_command_held =
         NovaInput_IsCommandActive(platform, kStarmapCommand);

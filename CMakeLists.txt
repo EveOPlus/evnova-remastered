@@ -10,7 +10,7 @@ endif()
 
 project(EscapeVelocityNova
     VERSION 0.1.0
-    DESCRIPTION "A clean-room recompilation of Escape Velocity Nova"
+    DESCRIPTION "A modern native rebuild of Escape Velocity Nova"
     LANGUAGES CXX)
 
 # vcpkg's fully-static Windows triplet builds every dependency with the static
@@ -32,9 +32,8 @@ option(EVNOVA_ENABLE_CLANG_TIDY "Run clang-tidy during compilation when availabl
 option(EVNOVA_ENABLE_PCH "Precompile shared standard/third-party headers" ON)
 
 # External probe/control harness (EVN_PROBE=1, docs/probe_harness.md). Its
-# transport is a raw POSIX socket server, so it compiles everywhere except
-# Windows (Winsock backend not written yet); there it defaults off so a plain
-# `cmake --preset release` still builds.
+# transport supports POSIX sockets and Windows Winsock. Windows player builds
+# default off; tools/build-windows.ps1 -TestDriver builds it separately.
 if(WIN32)
     option(EVNOVA_ENABLE_PROBE "Build the external probe/control harness" OFF)
 else()

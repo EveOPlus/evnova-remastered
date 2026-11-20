@@ -97,6 +97,7 @@ public:
   // (SDL_GetKeyboardState cannot see injected events, so held flight keys go
   // through this channel instead).
   [[nodiscard]] bool VirtualKey(SDL_Scancode scancode) const;
+  [[nodiscard]] SDL_MouseButtonFlags VirtualMouseButtons() const;
 
   // Returns the latest execution-mode request. The listener only records the
   // request; SdlPlatform consumes it on the main thread before SDL/timing
@@ -170,6 +171,9 @@ private:
   std::atomic<bool> running_{false};
   std::atomic<int> port_{0};
   std::thread thread_;
+#ifdef _WIN32
+  bool socket_runtime_initialized_ = false;
+#endif
 
   // Control plane (atomics; woken via sync_ notifications).
   std::atomic<bool> paused_{false};
@@ -211,6 +215,7 @@ private:
 
   mutable std::mutex keys_mutex_;
   std::set<SDL_Scancode> virtual_keys_;
+  SDL_MouseButtonFlags virtual_mouse_buttons_ = 0;
 
   std::mutex provider_mutex_;
   std::function<std::string(const std::string &query)> state_provider_;

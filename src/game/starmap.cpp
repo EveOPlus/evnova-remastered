@@ -1,11 +1,15 @@
 #include "starmap.hpp"
+#include "navigation_panel.hpp"
+#include "preferences_ui.hpp"
 #include "starmap_internal.hpp"
+#include "starmap_route.hpp"
 
 #include "../brgr_archive.hpp"
 #include "../cicn_image.hpp"
 #include "../log.hpp"
 #include "../pict_image.hpp"
 #include "../util/format.hpp"
+#include "../util/geometry.hpp"
 #include "hud_overlay.hpp"
 #include "hud_renderer.hpp"
 #include "mission.hpp"
@@ -751,7 +755,8 @@ void DrawSidePanels(SdlPlatform &platform,
                     const StarmapGeometry &geometry,
                     const StarmapStrings &strings,
                     std::int16_t selected_id,
-                    const HypergateMapMode *hypergate) {
+                    const HypergateMapMode *hypergate,
+                    const std::string &route_notice) {
   const float s = 1.0F;
   const SDL_FRect &side = geometry.side;
   const SDL_FRect &bar = geometry.bar;
@@ -1071,6 +1076,16 @@ void DrawSidePanels(SdlPlatform &platform,
   // "Navigation Hazards:" + the composed asteroid / interference / visibility
   // description (0x004a6219 second half). "<Unknown>" until visited.
   draw_date();
+  if (!route_notice.empty()) {
+    DrawTextAt(platform,
+               font_cache,
+               bar.x + 10.0F,
+               bar.y + 36.0F,
+               10.0F,
+               kColorWhite,
+               route_notice);
+    return;
+  }
   DrawTextAt(platform,
              font_cache,
              bar.x + 10.0F * s,
@@ -1513,6 +1528,13 @@ void HandleStarmapTabKey(const HypergateMapMode *hypergate,
 } // namespace
 
 // ---------------------------------------------------------------------------
+// @port 0x004A4353 65% gameplay,ui,divergence
+// DIVERGENCE(original): Shift-click replaces the original manual route edit
+// with shortest-known-route planning, using the same jump selection/arrival
+// path.
+// @port 0x004A3AA0 88% gameplay,license,divergence
+// DIVERGENCE(original): wheel input uses the same zoom steps/gates as +/-.
+// Pop out keeps a non-modal chart using the same projection and route planner.
 // @port 0x0049eef0 70% ui
 // TODO(decomp): the original's separate press/release tracking loop and
 // per-event redraw blits are folded into the per-frame draw.
@@ -1521,8 +1543,6 @@ void HandleStarmapTabKey(const HypergateMapMode *hypergate,
 // action enables the political overlay and continues the starmap inner loop;
 // ported inline in NovaStarmap_RunWindow's button switch (toggles
 // GameState::starmap_show_borders, .prf +0x76, and rebuilds the overlay).
-// @port 0x004A3AA0 88% gameplay,license
-// @port 0x004A4353 65% gameplay,ui
 // @port 0x004A9D10 50% rendering,ui
 // Ghidra 0x004a3aa0 NovaUi_RunStarmapWindow (clean-room modal loop).
 // The 0x004a9d10 NovaUi_EnableStarmapPoliticalOverlay slice is the Show/Hide
@@ -1535,6 +1555,7 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
                                     SpaceflightView *flight_view,
                                     HudRenderer *hud,
                                     std::int16_t hypergate_source_stellar_id) {
+  ProbeUiAutoClear probe_ui_guard(platform);
   const SdlPlatform::ScopedPlacement restore_placement(
       platform, platform.current_placement());
   if (state.scenario.systems.empty()) {
@@ -1660,9 +1681,9 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
   // overlay is cheap (the original defaulted OFF).
   bool &show_borders = state.starmap_show_borders;
 
-  // Route editing is Shift+click (pane-action commands 0x2a/0x36 =
-  // LShift/RShift, 0x004a4353's action-3 branch). Tab / Backslash go through
-  // the window's event filter (HandleStarmapTabKey).
+  // Shift-click plans a complete route. Tab / Backslash still use the
+  // original window event filter (HandleStarmapTabKey).
+  std::string route_notice;
 
   NovaLog::Info("opening galaxy starmap ({} systems, {} nebulae)",
                 state.scenario.systems.size(),
@@ -1693,6 +1714,8 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
     return r;
   };
 
+  float wheel_remainder = 0;
+  const SDL_FRect pop_out{panel.x + panel.w - 89, panel.y + 6, 82, 24};
   const auto apply_zoom_out = [&]() {
     if (static_cast<double>(view.zoom) < kZoomOutLimit) {
       view.zoom =
@@ -1759,8 +1782,14 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
                icons,
                1.0F,
                hypergate);
-    DrawSidePanels(
-        platform, font_cache, state, geometry, strings, selected_id, hypergate);
+    DrawSidePanels(platform,
+                   font_cache,
+                   state,
+                   geometry,
+                   strings,
+                   selected_id,
+                   hypergate,
+                   route_notice);
     DrawButtons(platform,
                 font_cache,
                 button_art,
@@ -1769,6 +1798,9 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
                 route_clearable(),
                 static_cast<double>(view.zoom),
                 hovered);
+    if (hypergate == nullptr)
+      preferences_detail::DrawButton(
+          platform, font_cache, pop_out, "Pop out", false, true, 12);
   };
 
   while (!platform.quit_requested()) {
@@ -1790,11 +1822,51 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
     }
     mapped = BuildMappedSystems(state, view, panel);
     draw_starmap(hovered_button);
+    std::vector<std::pair<std::string, SDL_FRect>> probe_controls;
+    if (hypergate == nullptr)
+      probe_controls.emplace_back(
+          "pop_out", platform.current_placement().ToWindowRect(pop_out));
+    constexpr std::array<const char *, 6> probe_names{
+        "borders", "clear_route", "find", "zoom_out", "zoom_in", "done"};
+    for (std::size_t i = 0; i < geometry.buttons.size(); ++i) {
+      probe_controls.emplace_back(
+          probe_names[i],
+          platform.current_placement().ToWindowRect(geometry.buttons[i]));
+    }
+    for (const auto &node : mapped) {
+      const bool marked =
+          starmap_detail::SystemOnMap(state, node.zero_based_id) ||
+          node.zero_based_id == selected_id ||
+          std::find(mission_targets.begin(),
+                    mission_targets.end(),
+                    node.zero_based_id) != mission_targets.end();
+      if (marked && node.sx >= panel.x && node.sx < panel.x + panel.w &&
+          node.sy >= panel.y && node.sy < panel.y + panel.h) {
+        probe_controls.emplace_back("system." +
+                                        std::to_string(node.zero_based_id),
+                                    platform.current_placement().ToWindowRect(
+                                        {node.sx - 3, node.sy - 3, 6, 6}));
+      }
+    }
+    platform.PublishProbeUi("starmap", std::move(probe_controls));
     platform.Present();
 
     // One batch of raw editable keys / clicks.
     for (std::optional<TextInput> in; (in = platform.PollTextEvent());) {
       switch (in->key) {
+      case TextKey::wheel:
+        if (std::isfinite(in->wheel_y)) {
+          wheel_remainder += std::clamp(in->wheel_y, -20.0F, 20.0F);
+          while (wheel_remainder >= 1) {
+            apply_zoom_in();
+            wheel_remainder -= 1;
+          }
+          while (wheel_remainder <= -1) {
+            apply_zoom_out();
+            wheel_remainder += 1;
+          }
+        }
+        break;
       case TextKey::escape:
         return close_with_selection();
 
@@ -1820,6 +1892,11 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
 
       case TextKey::primary: {
         const SDL_FPoint mp = platform.mouse_position();
+        if (hypergate == nullptr && evnova::util::Contains(pop_out, mp)) {
+          OpenNavigationPanel(
+              state, view.zoom, view.pan_x, view.pan_y, selected_id);
+          return close_with_selection();
+        }
         bool button_clicked = false;
         for (std::size_t i = 0; i < geometry.buttons.size(); ++i) {
           const SDL_FRect &b = geometry.buttons[i];
@@ -1841,6 +1918,7 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
               // (DAT_007dc744).
               if (route_clearable()) {
                 NovaStarmap_ClearRoute(state);
+                route_notice = "Route cleared.";
               }
               break;
             case StarmapButton::kFind: {
@@ -1888,28 +1966,12 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
         // is latched by the last discovery rebuild, is a mission target (raw
         // id compare, 0x004a4659), or is already selected -- otherwise only
         // when it is a travel-resolvable adjacency of the current system
-        // (plain click) or of the plotted route's tail (shift-click, which
-        // additionally accepts positional twins of the tail, 0x004a4899;
-        // with no hops plotted the shift source is the current system and
-        // the twin check is skipped). Everything else reads as empty space
-        // and begins a drag-pan.
-        const bool shift =
-            (SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_LSHIFT] != 0) ||
-            (SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_RSHIFT] != 0);
+        // for plain clicks. Shift-click additionally accepts every known map
+        // marker for automatic planning. Hypergate picks keep their own gate.
+        const bool shift = platform.IsOriginalKeyCodeHeld(0x2a) ||
+                           platform.IsOriginalKeyCodeHeld(0x36);
         std::int16_t hit = -1;
         bool hit_linked = false;
-        std::int16_t shift_tail = -1;
-        if (shift) {
-          for (const std::int16_t hop : state.travel.starmap_route) {
-            if (hop != -1) {
-              shift_tail = hop;
-            }
-          }
-          if (shift_tail == state.player.current_system_id) {
-            // Route[0] anchors the current system, not a plotted hop.
-            shift_tail = -1;
-          }
-        }
         for (const MappedSystem &m : mapped) {
           const std::int16_t cid = m.zero_based_id;
           const System &cand =
@@ -1932,41 +1994,34 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
           }
           bool accept =
               gate_linked || cand.discovered_this_rebuild ||
+              (shift && hypergate == nullptr && cand.discovery_state > 0) ||
               cid == selected_id ||
               std::any_of(mission_targets.begin(),
                           mission_targets.end(),
                           [&](std::int16_t target) { return target == cid; });
           if (!accept) {
-            const std::int16_t adj_source =
-                shift && shift_tail >= 0 ? shift_tail
-                                         : state.player.current_system_id;
+            const std::int16_t adj_source = state.player.current_system_id;
             const System &src =
                 state.scenario.systems[static_cast<std::size_t>(adj_source)];
-            if (shift && shift_tail >= 0 && src.pos_x == cand.pos_x &&
-                src.pos_y == cand.pos_y) {
-              accept = true;
-            } else {
-              for (const std::int16_t link : src.links) {
-                if (link < 0x80) {
-                  continue;
-                }
-                const std::int16_t resolved =
-                    NovaSystem_ResolveVisibleForTravel(
-                        state, static_cast<std::int16_t>(link - 0x80));
-                if (resolved < 0 || static_cast<std::size_t>(resolved) >=
-                                        state.scenario.systems.size()) {
-                  continue;
-                }
-                if (resolved == cid) {
-                  accept = true;
-                  break;
-                }
-                const System &rsys =
-                    state.scenario.systems[static_cast<std::size_t>(resolved)];
-                if (rsys.pos_x == cand.pos_x && rsys.pos_y == cand.pos_y) {
-                  accept = true;
-                  break;
-                }
+            for (const std::int16_t link : src.links) {
+              if (link < 0x80) {
+                continue;
+              }
+              const std::int16_t resolved = NovaSystem_ResolveVisibleForTravel(
+                  state, static_cast<std::int16_t>(link - 0x80));
+              if (resolved < 0 || static_cast<std::size_t>(resolved) >=
+                                      state.scenario.systems.size()) {
+                continue;
+              }
+              if (resolved == cid) {
+                accept = true;
+                break;
+              }
+              const System &rsys =
+                  state.scenario.systems[static_cast<std::size_t>(resolved)];
+              if (rsys.pos_x == cand.pos_x && rsys.pos_y == cand.pos_y) {
+                accept = true;
+                break;
               }
             }
           }
@@ -2002,15 +2057,24 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
           selected_id = hit;
           hypergate_choice = hit_linked ? hit : -1;
         } else if (shift) {
-          // Shift-click: route editing (0x004a47cc) — reset at the current
-          // system's slot, truncate at a plotted hop (the route ends AT the
-          // clicked system), pop a twin of the tail, append when the hit
-          // extends the chain. The original moves the selection only when
-          // the click appends a hop.
-          if (NovaStarmap_EditRouteAtHop(state, hit)) {
+          if (PlotShortestStarmapRoute(state, hit)) {
             selected_id = hit;
+            const auto jumps =
+                std::count_if(state.travel.starmap_route.begin() + 1,
+                              state.travel.starmap_route.end(),
+                              [](auto id) { return id >= 0; });
+            route_notice =
+                jumps == 0
+                    ? "Already here. Route cleared."
+                    : fmt::format(
+                          "Route: {} jump{}. J: one. Double-J: full route.",
+                          jumps,
+                          jumps == 1 ? "" : "s");
+          } else {
+            route_notice = "No known route available. Existing route kept.";
           }
         } else {
+          route_notice.clear();
           selected_id = hit;
           if (hit == state.player.current_system_id) {
             // Re-selecting the current system disarms the plotted jump

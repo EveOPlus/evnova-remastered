@@ -1,6 +1,6 @@
 // No-op ProbeServer transport used when EVNOVA_ENABLE_PROBE=OFF.
 //
-// The real implementation (probe_server.cpp) is a POSIX socket server; this
+// The real implementation (probe_server.cpp) is a local HTTP server; this
 // translation unit keeps the same class surface so every game-side call site
 // (PublishProbeUi, ConsumeAutomationRequest, ...) still compiles but does
 // nothing. EVN_PROBE=1 is ignored in this build. See docs/probe_harness.md.
@@ -18,6 +18,8 @@ void ProbeServer::OnPresent(SDL_Renderer *) {}
 bool ProbeServer::Pump() { return false; }
 
 bool ProbeServer::VirtualKey(SDL_Scancode) const { return false; }
+
+SDL_MouseButtonFlags ProbeServer::VirtualMouseButtons() const { return 0; }
 
 bool ProbeServer::ConsumeAccelerationRequest(bool &, std::uint32_t &, bool &) {
   return false;

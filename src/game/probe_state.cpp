@@ -5,6 +5,7 @@
 #include "outfit.hpp"
 #include "scenario_data.hpp"
 #include "ship_ai.hpp"
+#include "travel.hpp"
 #include "weapon.hpp"
 
 #include <cmath>
@@ -139,6 +140,7 @@ std::string ProbeState_Snapshot(const GameState &state,
   if (query.empty() || query == "summary") {
     Json j;
     j.boolean("game_active", state.game_active);
+    j.boolean("player_disabled", NovaAiShip_IsDisabled(state, state.player));
     j.str("pilot", state.pilot.first_name);
     j.num("credits", state.player.credits);
     j.num("system_id", system_id);
@@ -168,6 +170,10 @@ std::string ProbeState_Snapshot(const GameState &state,
     // tests/scenarios/tutorial_to_combat_rating.toml.
     j.num("combat_rating", state.player_combat_rating_points);
     j.boolean("travel_engaging", state.travel.engaging);
+    j.boolean("route_map_visible", state.route_map.overlay_visible);
+    j.num("jump_phase", static_cast<int>(state.travel.jump_phase));
+    j.num("jump_fade", state.screen_flash_intensity);
+    j.boolean("jump_fade_black", state.screen_flash_black);
     // Accelerated scheduler state: `x2_mode_active` is the port's stand-in for
     // the original g_x2_mode_active, set from the accelerated speed multiplier
     // (probe HTTP acceleration or the x2 key).
@@ -179,6 +185,110 @@ std::string ProbeState_Snapshot(const GameState &state,
     // Exposed so a harness can align samples to simulation frames rather than
     // wall-clock or request order.
     j.num("tick_60hz", state.tick_60hz);
+    return j.done();
+  }
+
+  if (query == "mining") {
+    Json j;
+    j.boolean("scoop_owned",
+              NovaOutfit_HasMiningScoopOutfit(state, state.player));
+    j.boolean("scoop_active", state.player.mining_scoop_active);
+    j.num("cargo_used", Player_ComputeCargoAndJunkTotal(state));
+    j.num("cargo_capacity", Player_ComputeFleetCargoCapacity(state));
+    j.num("selected_weapon", state.player.active_weapon_bank_slot);
+    j.num("last_fire_tick", state.player.last_weapon_fire_time_ms);
+    j.num("shot_count", state.active_shots.size());
+    j.num("maneuver_timer", state.player.ai_maneuver_timer_ms);
+    j.num("jump_timer", state.player.hyperspace_jump_timer);
+    j.num("fold_a", state.player.waypoint_arrival_marker_a);
+    j.num("fold_b", state.player.waypoint_arrival_marker_b);
+    j.num("sprite_flags", ship_class ? ship_class->sprite_behavior_flags : 0);
+    j.num("base_sets", ship_class ? ship_class->base_set_count : 0);
+    j.num("animation_count",
+          ship_class ? ship_class->animation_cycle_count : 0);
+    j.num("dwell", ship_class ? ship_class->combat_state_init_range : 0);
+    j.num("animation_timer", state.player.turn_bank_animation_phase);
+    JsonArr outfits;
+    for (std::size_t i = 0; i < state.inventory.outfit_owned_count.size();
+         ++i) {
+      const auto count = state.inventory.outfit_owned_count[i];
+      if (count <= 0)
+        continue;
+      const auto *outfit =
+          state.scenario.Outfit(static_cast<std::int16_t>(i + 0x80));
+      Json row;
+      row.num("id", i);
+      row.num("count", count);
+      row.str("name", outfit ? outfit->short_name : "");
+      outfits.raw(row.done());
+    }
+    j.array("outfits", outfits.done());
+    JsonArr weapons;
+    for (std::size_t i = 0; i < state.player.weapon_banks.size(); ++i) {
+      const auto &bank = state.player.weapon_banks[i];
+      if (bank.mounted <= 0)
+        continue;
+      const auto *weapon =
+          state.scenario.Weapon(static_cast<std::int16_t>(i + 0x80));
+      if (!weapon)
+        continue;
+      Json row;
+      row.num("id", i);
+      row.str("name", weapon->name);
+      row.num("mounted", bank.mounted);
+      row.num("ammo", bank.ammo);
+      row.num("cooldown", bank.cooldown);
+      row.num("mode", weapon->weapon_mode_code);
+      row.num("attempts",
+              NovaWeapon_GetWeaponBurstAttempts(
+                  state, state.player, static_cast<std::int16_t>(i)));
+      row.num("flags", weapon->flags);
+      row.num("flags3", weapon->flags_tertiary);
+      row.num("ammo_type", weapon->ammo_type);
+      row.num("range", weapon->range_scalar);
+      row.boolean("can_fire",
+                  NovaWeapon_CanFireWeaponBank(
+                      state, state.player, static_cast<std::int16_t>(i)));
+      row.boolean("secondary", (weapon->flags & 2U) != 0);
+      row.boolean("passes_asteroids", (weapon->flags_quaternary & 1U) != 0);
+      row.boolean("mining_bonus", (weapon->flags_secondary & 0x8000U) != 0);
+      weapons.raw(row.done());
+    }
+    j.array("weapons", weapons.done());
+    JsonArr asteroids;
+    for (std::size_t i = 0; i < state.asteroid_pool.size(); ++i) {
+      const auto &asteroid = state.asteroid_pool[i];
+      if (!asteroid.active)
+        continue;
+      Json row;
+      row.num("slot", i);
+      row.num("group", asteroid.mining_group);
+      row.num("type", asteroid.wander_type);
+      row.num("x", asteroid.target_pos_x);
+      row.num("y", asteroid.target_pos_y);
+      row.num("vx", asteroid.target_vel_x);
+      row.num("vy", asteroid.target_vel_y);
+      row.num("integrity", asteroid.integrity);
+      if (const auto *def = state.scenario.AsteroidType(
+              static_cast<std::int16_t>(asteroid.wander_type + 0x80))) {
+        row.num("yield", def->yield_qty);
+        row.num("yield_type", def->yield_type);
+      }
+      asteroids.raw(row.done());
+    }
+    j.array("asteroids", asteroids.done());
+    JsonArr debris;
+    for (const auto &object : state.freeflight_objects) {
+      if (object.lifetime_ticks < 0 || !object.persistent)
+        continue;
+      Json row;
+      row.num("x", object.pos_x);
+      row.num("y", object.pos_y);
+      row.num("cargo_type", object.extra);
+      row.num("group", object.mining_group);
+      debris.raw(row.done());
+    }
+    j.array("debris", debris.done());
     return j.done();
   }
 
@@ -429,6 +539,67 @@ std::string ProbeState_Snapshot(const GameState &state,
     j.boolean("selected_stellar_is_manual",
               state.travel.selected_stellar_is_manual);
     j.boolean("hyperspace_mode", state.travel.hyperspace_mode);
+    JsonArr route;
+    for (const auto id : state.travel.starmap_route) {
+      if (id < 0)
+        break;
+      Json hop;
+      hop.num("id", id);
+      if (static_cast<std::size_t>(id) < state.scenario.systems.size()) {
+        hop.str("name",
+                state.scenario.systems[static_cast<std::size_t>(id)].name);
+      }
+      route.raw(hop.done());
+    }
+    j.array("route", route.done());
+    return j.done();
+  }
+
+  if (query == "galaxy") {
+    Json j;
+    JsonArr systems;
+    for (std::size_t i = 0; i < state.scenario.systems.size(); ++i) {
+      const auto &entry = state.scenario.systems[i];
+      if (!entry.is_visible || !entry.has_explored_flag)
+        continue;
+      Json row;
+      row.num("id", i);
+      row.str("name", entry.name);
+      row.boolean("visited", entry.discovery_state > 0);
+      row.boolean("on_map",
+                  entry.discovery_state > 0 || entry.discovered_this_rebuild);
+      JsonArr links;
+      for (const auto link : entry.links) {
+        if (link < 0x80)
+          continue;
+        const auto resolved = NovaSystem_ResolveVisibleForTravel(
+            state, static_cast<std::int16_t>(link - 0x80));
+        if (resolved >= 0)
+          links.raw(std::to_string(resolved));
+      }
+      row.array("links", links.done());
+      systems.raw(row.done());
+    }
+    j.array("systems", systems.done());
+    return j.done();
+  }
+
+  if (query == "stellars") {
+    Json j;
+    JsonArr rows;
+    for (std::size_t i = 0; i < state.scenario.stellars.size(); ++i) {
+      const auto &stellar = state.scenario.stellars[i];
+      if (stellar.system_id != state.player.current_system_id ||
+          !stellar.is_available)
+        continue;
+      Json row;
+      row.num("id", i + 0x80);
+      row.str("name", stellar.name);
+      row.num("pos_x", stellar.pos_x);
+      row.num("pos_y", stellar.pos_y);
+      rows.raw(row.done());
+    }
+    j.array("stellars", rows.done());
     return j.done();
   }
 
@@ -442,6 +613,20 @@ std::string ProbeState_Snapshot(const GameState &state,
         system_id < static_cast<std::int16_t>(state.system_reputation.size())) {
       j.num("reputation", state.system_reputation[system_id]);
     }
+    JsonArr links;
+    if (system != nullptr) {
+      for (const auto link : system->links) {
+        if (link < 0x80)
+          continue;
+        if (const auto *destination = state.scenario.System(link)) {
+          Json row;
+          row.num("id", link - 0x80);
+          row.str("name", destination->name);
+          links.raw(row.done());
+        }
+      }
+    }
+    j.array("links", links.done());
     return j.done();
   }
 

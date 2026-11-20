@@ -215,6 +215,7 @@ void Mission_ClearMisnSlotAssignments(
 struct MissionDialogText {
   std::string text;
   std::int16_t dialog_variant = 0;
+  std::string movie;
 };
 
 // UI sink for the mission debrief text-reader dialogs (MisnActive +0x3d Comp

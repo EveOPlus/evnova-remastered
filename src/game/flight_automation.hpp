@@ -6,9 +6,17 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace game {
-enum class FlightAutomationGoal { kNone, kLandAt, kJumpTo, kDestroy };
+enum class FlightAutomationGoal {
+  kNone,
+  kLandAt,
+  kJumpTo,
+  kFollowRoute,
+  kDestroy,
+  kMine
+};
 enum class FlightAutomationPhase {
   kIdle,
   kSelect,
@@ -44,6 +52,12 @@ public:
               std::string,
               std::uint64_t now_ms,
               std::uint64_t timeout_ms = 180000);
+  // Remake jump assist: take over only when range is the sole failed gate.
+  bool AssistBlockedJump(const GameState &, std::uint64_t now_ms);
+  bool FollowRoute(const GameState &, std::uint64_t now_ms);
+  [[nodiscard]] bool FollowingRoute() const;
+  bool MineAsteroid(const GameState &, std::int16_t slot, std::uint64_t now_ms);
+  [[nodiscard]] bool Mining() const;
   // High-level "destroy a ship" routine. `target` matches an active ship in
   // the player's system by class display name (case-insensitive), falling back
   // to its instance ship_name; a pure-decimal target is also read as a ship
@@ -114,13 +128,25 @@ public:
                               FlightInput &,
                               float elapsed_ticks = 1.0F,
                               float target_vel_x = 0.0F,
-                              float target_vel_y = 0.0F);
+                              float target_vel_y = 0.0F,
+                              bool lead_moving_target = true);
 
 private:
   void Fail(std::string);
   void Tap(bool FlightInput::*field, FlightInput &);
   // kDestroy body: acquires via the target-cycle hotkey, then leads/fires.
   void TickDestroy(const GameState &, FlightInput &, float elapsed_ticks);
+  void TickMining(const GameState &, FlightInput &, float elapsed_ticks);
+  std::uint64_t mining_group_ = 0;
+  std::int16_t mining_system_ = -1;
+  std::int16_t mining_bank_ = -1;
+  int mining_cargo_start_ = 0;
+  void TickRoute(const GameState &,
+                 std::uint64_t now_ms,
+                 FlightInput &,
+                 float elapsed_ticks);
+  std::vector<std::int16_t> route_plan_;
+  std::size_t route_leg_ = 1;
   FlightAutomationStatus status_;
   std::int16_t target_id_ = -1;
   // Explicit/numeric ship identifier for kDestroy; -1 when the name is the

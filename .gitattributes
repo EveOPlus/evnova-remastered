@@ -1,0 +1,3 @@
+# Keep vendored code hashes stable and preserve dependency notices verbatim.
+src/third_party/*.h text eol=lf -whitespace
+licenses/*.txt -text -whitespace

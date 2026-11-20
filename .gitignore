@@ -29,6 +29,17 @@ pi-session-*.html
 
 # Distribution packages
 /dist/
+/Play EV Nova Remake.lnk
 
 # Local secrets
 .env
+.env.*
+!.env.example
+*.plt
+*.rez
+*.onnx
+*.onnx.json
+*.evs
+/Game Data/
+/Downloads/
+/Pilots/

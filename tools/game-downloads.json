@@ -1,0 +1,258 @@
+{
+  "source": "https://download.escape-velocity.games/",
+  "verified": "2026-11-20",
+  "packages": {
+    "community": {
+      "url": "https://download.escape-velocity.games/EV_Nova_Community_Edition.zip",
+      "archive": "EV_Nova_Community_Edition.zip",
+      "sha256": "cc6a126de619a12c5ecbdc0ff482e66f7631901625eb6798579ac6704f4871fe",
+      "size": 87952636,
+      "files": [
+        {
+          "source": "EV Nova/Charcoal.ttf",
+          "target": "Charcoal.ttf"
+        },
+        {
+          "source": "EV Nova/Documentation/EV Nova Documentation.pdf",
+          "target": "Documentation/EV Nova Documentation.pdf"
+        },
+        {
+          "source": "EV Nova/Documentation/Nova beta history.txt",
+          "target": "Documentation/Nova beta history.txt"
+        },
+        {
+          "source": "EV Nova/Documentation/Nova Bible.txt",
+          "target": "Documentation/Nova Bible.txt"
+        },
+        {
+          "source": "EV Nova/Documentation/nova_preamble_1.pdf",
+          "target": "Documentation/nova_preamble_1.pdf"
+        },
+        {
+          "source": "EV Nova/Documentation/nova_preamble_2.pdf",
+          "target": "Documentation/nova_preamble_2.pdf"
+        },
+        {
+          "source": "EV Nova/Documentation/nova_preamble_3.pdf",
+          "target": "Documentation/nova_preamble_3.pdf"
+        },
+        {
+          "source": "EV Nova/Documentation/nova_preamble_4.pdf",
+          "target": "Documentation/nova_preamble_4.pdf"
+        },
+        {
+          "source": "EV Nova/Documentation/nova_preamble_5.pdf",
+          "target": "Documentation/nova_preamble_5.pdf"
+        },
+        {
+          "source": "EV Nova/Documentation/nova_preamble_6.pdf",
+          "target": "Documentation/nova_preamble_6.pdf"
+        },
+        {
+          "source": "EV Nova/Documentation/nova_preamble_7.pdf",
+          "target": "Documentation/nova_preamble_7.pdf"
+        },
+        {
+          "source": "EV Nova/Documentation/nova_preamble_8.pdf",
+          "target": "Documentation/nova_preamble_8.pdf"
+        },
+        {
+          "source": "EV Nova/EV Nova CE Read Me.txt",
+          "target": "EV Nova CE Read Me.txt"
+        },
+        {
+          "source": "EV Nova/EV Nova.exe",
+          "target": "EV Nova.exe"
+        },
+        {
+          "source": "EV Nova/Geneva.ttf",
+          "target": "Geneva.ttf"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Data 1.rez",
+          "target": "Nova Files/Nova Data 1.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Data 2.rez",
+          "target": "Nova Files/Nova Data 2.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Data 3.rez",
+          "target": "Nova Files/Nova Data 3.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Data 4.rez",
+          "target": "Nova Files/Nova Data 4.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Data 5.rez",
+          "target": "Nova Files/Nova Data 5.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Data 6.rez",
+          "target": "Nova Files/Nova Data 6.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Graphics 1.rez",
+          "target": "Nova Files/Nova Graphics 1.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Graphics 2.rez",
+          "target": "Nova Files/Nova Graphics 2.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Graphics 3.rez",
+          "target": "Nova Files/Nova Graphics 3.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Music.mp3",
+          "target": "Nova Files/Nova Music.mp3"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Ships 1.rez",
+          "target": "Nova Files/Nova Ships 1.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Ships 2.rez",
+          "target": "Nova Files/Nova Ships 2.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Ships 3.rez",
+          "target": "Nova Files/Nova Ships 3.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Ships 4.rez",
+          "target": "Nova Files/Nova Ships 4.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Ships 5.rez",
+          "target": "Nova Files/Nova Ships 5.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Ships 6.rez",
+          "target": "Nova Files/Nova Ships 6.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Ships 7.rez",
+          "target": "Nova Files/Nova Ships 7.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Sounds.rez",
+          "target": "Nova Files/Nova Sounds.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Titles 1.rez",
+          "target": "Nova Files/Nova Titles 1.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Titles 2.rez",
+          "target": "Nova Files/Nova Titles 2.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Titles 3.rez",
+          "target": "Nova Files/Nova Titles 3.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Nova Titles 4.rez",
+          "target": "Nova Files/Nova Titles 4.rez"
+        },
+        {
+          "source": "EV Nova/Nova Files/Race 1.mov",
+          "target": "Nova Files/Race 1.mov"
+        },
+        {
+          "source": "EV Nova/Nova Files/Race 2.mov",
+          "target": "Nova Files/Race 2.mov"
+        },
+        {
+          "source": "EV Nova/Nova Files/Race 3.mov",
+          "target": "Nova Files/Race 3.mov"
+        },
+        {
+          "source": "EV Nova/Nova Files/Race 4.mov",
+          "target": "Nova Files/Race 4.mov"
+        },
+        {
+          "source": "EV Nova/Nova.rez",
+          "target": "Nova.rez"
+        }
+      ]
+    },
+    "arpia2": {
+      "url": "https://download.escape-velocity.games/ARPIA2.zip",
+      "archive": "ARPIA2.zip",
+      "sha256": "4f51e4ab7c655a4fd2446387ba9735d585d82e101396e02612ffe7870d2795d2",
+      "size": 39026861,
+      "files": [
+        {
+          "source": "Plug-Ins/ARPIA2 - Graphics 1.rez",
+          "target": "ARPIA2 - Graphics 1.rez"
+        },
+        {
+          "source": "Plug-Ins/ARPIA2 - Ships.rez",
+          "target": "ARPIA2 - Ships.rez"
+        },
+        {
+          "source": "Plug-Ins/ARPIA2 - Graphics 2.rez",
+          "target": "ARPIA2 - Graphics 2.rez"
+        },
+        {
+          "source": "Plug-Ins/gasminer.mov",
+          "target": "gasminer.mov"
+        },
+        {
+          "source": "Plug-Ins/credits.mov",
+          "target": "credits.mov"
+        },
+        {
+          "source": "Plug-Ins/ARPIA2 - Data 2.rez",
+          "target": "ARPIA2 - Data 2.rez"
+        },
+        {
+          "source": "Plug-Ins/ARPIA2 - Data 1.rez",
+          "target": "ARPIA2 - Data 1.rez"
+        },
+        {
+          "source": "Plug-Ins/ARPIA2 - Music 2.rez",
+          "target": "ARPIA2 - Music 2.rez"
+        },
+        {
+          "source": "Plug-Ins/ARPIA2 - Music 1.rez",
+          "target": "ARPIA2 - Music 1.rez"
+        },
+        {
+          "source": "WARNING.rtf",
+          "target": "Documentation/WARNING.rtf"
+        },
+        {
+          "source": "Extra ARPIA2 add-ons/ARPIA2 - Secondary Stingray.rez",
+          "target": "ZZ ARPIA2 - Secondary Stingray.rez"
+        },
+        {
+          "source": "Extra ARPIA2 add-ons/README - variants & other extras.rtf",
+          "target": "Documentation/README - variants & other extras.rtf"
+        },
+        {
+          "source": "Extra ARPIA2 add-ons/ARPIA2 - Secondary RocketL.rez",
+          "target": "ZZ ARPIA2 - Secondary RocketL.rez"
+        },
+        {
+          "source": "Extra ARPIA2 add-ons/ARPIA2 - Variants.rez",
+          "target": "ZZ ARPIA2 - Variants.rez"
+        },
+        {
+          "source": "ReadMe (do, even cheaters).rtf",
+          "target": "Documentation/ReadMe (do, even cheaters).rtf"
+        },
+        {
+          "source": "Preambles & Walkthrough/Preamble.pdf",
+          "target": "Documentation/Preambles & Walkthrough/Preamble.pdf"
+        },
+        {
+          "source": "Preambles & Walkthrough/Walkthrough.rtf",
+          "target": "Documentation/Preambles & Walkthrough/Walkthrough.rtf"
+        }
+      ]
+    }
+  }
+}

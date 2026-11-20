@@ -8,10 +8,13 @@
 #include "../sdl_platform.hpp"
 #include "../util/format.hpp"
 #include "../util/geometry.hpp"
+#include "../util/render_clip_scope.hpp"
 #include "escort_commands.hpp"
 #include "hud_overlay.hpp"
 #include "nova_font.hpp"
 #include "outfit.hpp"
+#include "radar_icons.hpp"
+#include "radar_layout.hpp"
 #include "radar_panel.hpp"
 #include "ship_ai.hpp"
 #include "sprite_world.hpp"
@@ -25,6 +28,7 @@
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace game {
 
@@ -521,8 +525,13 @@ void HudRenderer::Draw(SdlPlatform &platform,
   const float art_h = cockpit_h_ > 0
                           ? static_cast<float>(cockpit_h_)
                           : static_cast<float>(kGameplayHudStripHeight);
-  const float hud_scale = std::min(
-      platform.hud_scale(), std::min(playfield.x / art_w, playfield.y / art_h));
+  const float expansion =
+      platform.remastered_graphics() ? kRadarHudExpansion : 0;
+  const float hud_scale = RadarHudScale(playfield,
+                                        platform.hud_scale(),
+                                        platform.remastered_graphics(),
+                                        art_w,
+                                        art_h);
   const SdlPlatform::ScopedPlacement hud_placement(
       platform, PlaceWindow(playfield, hud_scale));
   const auto render_right =
@@ -553,16 +562,37 @@ void HudRenderer::Draw(SdlPlatform &platform,
 
   // Cockpit PICT: native size, pinned to the upper-right HUD origin.
   if (cockpit_) {
-    const SDL_FRect strip_rect{static_cast<float>(hud_left),
-                               0.0F,
-                               static_cast<float>(cockpit_w_),
-                               static_cast<float>(cockpit_h_)};
-    SDL_RenderTexture(renderer, cockpit_->get(), nullptr, &strip_rect);
+    if (expansion > 0 && layout_.radar_panel.valid()) {
+      const float split = std::clamp(
+          static_cast<float>(layout_.radar_panel.bottom) + 6, 1.0F, art_h);
+      const SDL_FRect top_src{0, 0, art_w, split};
+      const SDL_FRect top_dst{static_cast<float>(hud_left) - expansion,
+                              0,
+                              art_w + expansion,
+                              split + expansion};
+      const SDL_FRect lower_src{0, split, art_w, art_h - split};
+      const SDL_FRect lower_dst{static_cast<float>(hud_left),
+                                split + expansion,
+                                art_w,
+                                art_h - split};
+      SDL_RenderTexture(renderer, cockpit_->get(), &top_src, &top_dst);
+      SDL_RenderTexture(renderer, cockpit_->get(), &lower_src, &lower_dst);
+    } else {
+      const SDL_FRect strip_rect{static_cast<float>(hud_left),
+                                 0.0F,
+                                 static_cast<float>(cockpit_w_),
+                                 static_cast<float>(cockpit_h_)};
+      SDL_RenderTexture(renderer, cockpit_->get(), nullptr, &strip_rect);
+    }
   }
 
   // Stellar radar panel (NovaUi_DrawStellarRadarPanel 0x0045d600): composites
   // onto the cockpit art before the other panels refresh.
   DrawRadarPanel(platform, state, force_empty_radar);
+
+  auto lower_placement = platform.current_placement();
+  lower_placement.dst.y += expansion * hud_scale;
+  const SdlPlatform::ScopedPlacement lower_panels(platform, lower_placement);
 
   // @port 0x0045E9C0 80% rendering,divergence
   // DIVERGENCE(original): the per-panel saved-backdrop restore is replaced by
@@ -1562,6 +1592,10 @@ void HudRenderer::DrawEscortCommandsPanel(SdlPlatform &platform,
 // @port 0x0045D600 85% rng,rendering,divergence
 // DIVERGENCE(original): the radar direct-composite pass differs from the
 // original's surface-space compositing; see the timing note below.
+// Remastered mode uses heading icons, distinct stellar symbols and target
+// brackets in an expanded, independently zoomable panel. Overlapping symbols
+// are displaced with position leaders; detection/IFF/interference are
+// unchanged.
 // @port 0x004BBDC0 80% rendering
 // Ghidra 0x004bbdc0 DrawContext_TileImageInRect: the radar
 // interference-static tiling runs inline in the static pass below.
@@ -1571,13 +1605,41 @@ void HudRenderer::DrawRadarPanel(SdlPlatform &platform,
   // RadarArea validity gate (DAT_007355de < DAT_007355e2 && dc < e0).
   if (!(layout_.radar_panel.left < layout_.radar_panel.right) ||
       !(layout_.radar_panel.top < layout_.radar_panel.bottom)) {
+    platform.SetRadarGeometry({}, {});
     return;
   }
   SDL_Renderer *renderer = platform.renderer();
   const float render_right = platform.current_placement().authored_size.x;
-  const HudPanelRect radar = HudPanel_AnchorTopRight(
+  HudPanelRect radar = HudPanel_AnchorTopRight(
       layout_.radar_panel,
       static_cast<std::int16_t>(std::lround(render_right)));
+  const bool remastered = platform.remastered_graphics();
+  float projection_gain = 1;
+  SDL_FRect frame{};
+  if (remastered) {
+    const float width = cockpit_w_ > 0 ? static_cast<float>(cockpit_w_)
+                                       : kGameplayHudStripWidth;
+    const float split = static_cast<float>(layout_.radar_panel.bottom) + 6;
+    const float sx = (width + kRadarHudExpansion) / width;
+    const float sy = (split + kRadarHudExpansion) / split;
+    const float left = render_right - width - kRadarHudExpansion;
+    radar = {
+        static_cast<std::int16_t>(
+            std::lround(left + layout_.radar_panel.left * sx)),
+        static_cast<std::int16_t>(std::lround(layout_.radar_panel.top * sy)),
+        static_cast<std::int16_t>(
+            std::lround(left + layout_.radar_panel.right * sx)),
+        static_cast<std::int16_t>(
+            std::lround(layout_.radar_panel.bottom * sy))};
+    frame = {left, 0, width + kRadarHudExpansion, split + kRadarHudExpansion};
+    projection_gain = std::min(sx, sy) * platform.presentation_scale().radar;
+  }
+  platform.SetRadarGeometry(platform.current_placement().ToWindowRect(
+                                {static_cast<float>(radar.left),
+                                 static_cast<float>(radar.top),
+                                 static_cast<float>(radar.width()),
+                                 static_cast<float>(radar.height())}),
+                            platform.current_placement().ToWindowRect(frame));
 
   // @port 0x0045D320 40% ui
   // Target-status poll (NovaUi_RefreshGameplayPanels 0x0045d320): toggles the
@@ -1635,16 +1697,38 @@ void HudRenderer::DrawRadarPanel(SdlPlatform &platform,
   const SDL_Color dim = ColorOf(layout_.color_word[3]);    // DimRadar
   const float center_x = static_cast<float>(radar.left + radar.right) * 0.5F;
   const float center_y = static_cast<float>(radar.top + radar.bottom) * 0.5F;
+  const SDL_FRect radar_box{static_cast<float>(radar.left),
+                            static_cast<float>(radar.top),
+                            static_cast<float>(radar.right - radar.left),
+                            static_cast<float>(radar.bottom - radar.top)};
+  std::optional<evnova::util::RenderClipScope> radar_clip;
+  if (remastered) {
+    radar_clip.emplace(renderer, radar_box);
+    SDL_SetRenderDrawColor(renderer, 5, 8, 10, 255);
+    SDL_RenderFillRect(renderer, &radar_box);
+    SDL_SetRenderDrawColor(renderer, 20, 29, 33, 255);
+    const float range = std::min(radar_box.w, radar_box.h) * .46F;
+    DrawRadarRing(renderer, center_x, center_y, range);
+    DrawRadarRing(renderer, center_x, center_y, range * .5F);
+    DrawRadarLine(
+        renderer, center_x - range, center_y, center_x + range, center_y);
+    DrawRadarLine(
+        renderer, center_x, center_y - range, center_x, center_y + range);
+  }
 
   const auto blip_pos = [&](float world_x, float world_y) {
     const int dx = CeilRadar(world_x - state.player.pos_x);
     const int dy = CeilRadar(world_y - state.player.pos_y);
     return std::pair<int, int>{
         CeilRadar(static_cast<float>(static_cast<double>(center_x) +
-                                     static_cast<double>(dx) * kRadarScale)),
+                                     static_cast<double>(dx) * kRadarScale *
+                                         projection_gain)),
         CeilRadar(static_cast<float>(static_cast<double>(center_y) +
-                                     static_cast<double>(dy) * kRadarScale))};
+                                     static_cast<double>(dy) * kRadarScale *
+                                         projection_gain))};
   };
+  std::vector<RadarContact> contacts;
+  contacts.reserve(GameState::kMaxShips + 16);
 
   if (!force_empty && radar_static_active_) {
     // Interference static: tile one of ten pre-rendered noise patterns over
@@ -1712,6 +1796,20 @@ void HudRenderer::DrawRadarPanel(SdlPlatform &platform,
         SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
         const bool planet = (st->flags & 0x10U) == 0U &&
                             (st->availability_flags & 0x3000U) == 0U;
+        if (remastered) {
+          const auto kind = (st->availability_flags & 0x3000U) != 0U
+                                ? RadarIcon::gate
+                            : planet ? RadarIcon::planet
+                                     : RadarIcon::station;
+          contacts.push_back({{static_cast<float>(bx), static_cast<float>(by)},
+                              {},
+                              kind,
+                              planet ? 4.0F : 3.5F,
+                              0,
+                              color,
+                              state.travel.selected_stellar_id == nav});
+          continue;
+        }
         if (planet) {
           // Disc radius tier from the spin sprite's full frame width
           // (Sprite_GetFrameFullWidth 0x00462390, default 0x20).
@@ -1782,6 +1880,18 @@ void HudRenderer::DrawRadarPanel(SdlPlatform &platform,
             static_cast<std::int16_t>(ship.ship_class_id + 0x80));
         const bool big_blip =
             density && cls != nullptr && cls->mass_tons >= 100;
+        if (remastered) {
+          contacts.push_back({{static_cast<float>(bx), static_cast<float>(by)},
+                              {},
+                              NovaAiShip_IsDisabled(state, ship)
+                                  ? RadarIcon::disabled
+                                  : RadarIcon::ship,
+                              big_blip ? 4.0F : 3.0F,
+                              ship.heading,
+                              color,
+                              selected});
+          continue;
+        }
         if (!big_blip) {
           // Single-pixel dot, inclusive radar-bounds test.
           if (bx >= radar.left && bx <= radar.right && by >= radar.top &&
@@ -1807,7 +1917,15 @@ void HudRenderer::DrawRadarPanel(SdlPlatform &platform,
     const SDL_Color color =
         iff ? Ship_RadarDisplayColor(state, state.player) : bright;
     SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
-    SDL_RenderPoint(renderer, center_x, center_y);
+    if (remastered)
+      contacts.push_back({{center_x, center_y},
+                          {},
+                          RadarIcon::player,
+                          5,
+                          state.player.heading,
+                          color});
+    else
+      SDL_RenderPoint(renderer, center_x, center_y);
   }
 
   // Far-from-origin direction arrow: while a primary target keeps the blink
@@ -1851,6 +1969,34 @@ void HudRenderer::DrawRadarPanel(SdlPlatform &platform,
                        static_cast<float>(CeilRadar(wing_y)));
       }
       SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+    }
+  }
+  if (remastered) {
+    LayoutRadarContacts(contacts, radar_box);
+    for (const auto &contact : contacts) {
+      if (!contact.placed)
+        continue;
+      if (std::abs(contact.position.x - contact.anchor.x) > 2 ||
+          std::abs(contact.position.y - contact.anchor.y) > 2) {
+        SDL_SetRenderDrawColor(renderer, 58, 72, 79, 255);
+        DrawRadarLine(renderer,
+                      contact.anchor.x,
+                      contact.anchor.y,
+                      contact.position.x,
+                      contact.position.y);
+        SDL_RenderPoint(renderer, contact.anchor.x, contact.anchor.y);
+      }
+    }
+    for (const auto &contact : contacts) {
+      if (contact.placed)
+        DrawRadarIcon(renderer,
+                      contact.icon,
+                      contact.position.x,
+                      contact.position.y,
+                      contact.radius,
+                      contact.heading,
+                      contact.color,
+                      contact.selected);
     }
   }
 }

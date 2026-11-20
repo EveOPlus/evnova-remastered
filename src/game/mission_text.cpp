@@ -579,6 +579,7 @@ MissionDialogText Mission_LoadSelectionDialogText(const GameState &state,
   }
   message.text = desc->text;
   message.dialog_variant = desc->dialog_variant;
+  message.movie = desc->status;
   // Ui_LoadSelectionDialogResource runs the ^-placeholder pass at load time
   // (0x004c6d50); the mission wildcard pass is Stellar_BuildTravelDestination-
   // Description (0x004444f0).

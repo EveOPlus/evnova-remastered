@@ -34,6 +34,8 @@ enum class GameModeAction : std::uint8_t {
   // actions. Kept above the original range so a hovered lane (0..5) can never
   // collide with it.
   acknowledgements = 6,
+  // Remake menu action; original sprite lanes stay 0..5.
+  save_pilot = 7,
 };
 
 enum class StartupPhase : std::uint8_t {

@@ -308,6 +308,15 @@ original formatter. Active missions rebuild their two cached STR# display
 names, deadline, count latch, randomized rearm clock, and cleared transient
 metric after the raw records are loaded.
 
+The remake's Save Pilot menu action uses a native Save As dialog.
+`PilotFileSaveGameToPath` writes the same format to the exact selected filename;
+`PilotFileSaveGame` retains the original name-based automatic-save behavior.
+Both record Last Pilot in the active support folder. Save and Open dialogs
+start in that campaign's normal Pilots folder. A cancelled dialog has no save
+or marker side effects. The write is closed and checked before success is
+reported. As in the original loader, the opened filename supplies the pilot's
+name.
+
 The scenario-aware load pass also mirrors the original recovery work: it
 clears positive outfit, weapon-bank, and junk quantities whose definitions no
 longer exist; repairs a missing ship class; recovers a `-1` jump destination;
@@ -322,6 +331,10 @@ definition loss reports `kRepairsApplied` while retaining the usable pilot.
   seeded with `0xb36a210f`. A plaintext block whose first u16 is naturally at
   least `0x800` would be mistaken for encoded data; shipped saves avoid that
   ambiguity by encoding both blocks.
+  The remake's serializer now encodes a negative no-stellar destination, so
+  its `0xffff` word cannot cause plaintext to be decoded as ciphertext. Manual
+  menu saves select a current-system stellar as the restore point, rather
+  than relying on a possibly empty or stale navigation selection.
 - Converted classic-Mac pilots retain big-endian scalars and Pascal strings
   inside the size-prefixed blocks. Windows pilots use little-endian scalars and
   C strings. FleetState version 300 distinguishes the payload layouts. The

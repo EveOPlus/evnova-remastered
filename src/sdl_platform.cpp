@@ -285,6 +285,7 @@ void SdlPlatform::RendererDeleter::operator()(SDL_Renderer *renderer) const {
 }
 
 SdlPlatform::~SdlPlatform() {
+  narrator_.reset();
   renderer_.reset();
   window_.reset();
   if (sdl_initialized_) {
@@ -323,6 +324,8 @@ bool SdlPlatform::Initialize(bool windowed) {
       SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
   if (!windowed) {
     window_flags |= SDL_WINDOW_FULLSCREEN;
+  } else {
+    window_flags |= SDL_WINDOW_MAXIMIZED;
   }
   window_.reset(SDL_CreateWindow("Escape Velocity Nova",
                                  kMinimumWindowWidth,
@@ -372,38 +375,75 @@ bool SdlPlatform::Initialize(bool windowed) {
 
 SDL_Renderer *SdlPlatform::renderer() const { return renderer_.get(); }
 
-bool SdlPlatform::ShowOpenPilotFileDialog() {
+bool SdlPlatform::ShowOpenPilotFileDialog(
+    const std::filesystem::path &directory) {
+  return ShowPilotFileDialog(directory, PilotFileDialogMode::open);
+}
+
+bool SdlPlatform::ShowSavePilotFileDialog(
+    const std::filesystem::path &default_file) {
+  return ShowPilotFileDialog(default_file, PilotFileDialogMode::save);
+}
+
+bool SdlPlatform::ShowPilotFileDialog(const std::filesystem::path &default_path,
+                                      PilotFileDialogMode mode) {
   {
     std::scoped_lock lock(open_file_dialog_mutex_);
-    if (open_file_dialog_pending_) {
+    if (open_file_dialog_pending_ || open_file_dialog_completed_) {
       return false;
     }
     open_file_dialog_pending_ = true;
     open_file_dialog_completed_ = false;
     open_file_dialog_result_ = {};
+    open_file_dialog_result_.mode = mode;
   }
+
+#if EVNOVA_ENABLE_PROBE
+  // Test-driver file selection follows the normal Open Pilot result path.
+  // The player build never consults this environment variable.
+  if (probe_.running() && mode == PilotFileDialogMode::open) {
+    if (const char *fixture = SDL_getenv("EVN_PROBE_PILOT_FILE");
+        fixture != nullptr && *fixture != '\0') {
+      const std::string_view selected(fixture);
+      std::scoped_lock lock(open_file_dialog_mutex_);
+      open_file_dialog_result_.path = std::filesystem::path(
+          std::u8string(selected.begin(), selected.end()));
+      open_file_dialog_pending_ = false;
+      open_file_dialog_completed_ = true;
+      return true;
+    }
+  }
+#endif
 
   static constexpr SDL_DialogFileFilter kPilotFilter{"EV Nova pilot files",
                                                      "plt"};
-  SDL_ShowOpenFileDialog(
-      [](void *userdata, const char *const *filelist, int) {
-        auto &platform = *static_cast<SdlPlatform *>(userdata);
-        std::scoped_lock lock(platform.open_file_dialog_mutex_);
-        if (filelist == nullptr) {
-          platform.open_file_dialog_result_.error = SDL_GetError();
-        } else if (*filelist != nullptr) {
-          platform.open_file_dialog_result_.path =
-              std::filesystem::path(*filelist);
-        }
-        platform.open_file_dialog_pending_ = false;
-        platform.open_file_dialog_completed_ = true;
-      },
-      this,
-      window_.get(),
-      &kPilotFilter,
-      1,
-      nullptr,
-      false);
+  const auto callback = [](void *userdata, const char *const *filelist, int) {
+    auto &platform = *static_cast<SdlPlatform *>(userdata);
+    std::scoped_lock lock(platform.open_file_dialog_mutex_);
+    if (filelist == nullptr) {
+      platform.open_file_dialog_result_.error = SDL_GetError();
+    } else if (*filelist != nullptr) {
+      const std::string_view selected(*filelist);
+      platform.open_file_dialog_result_.path = std::filesystem::path(
+          std::u8string(selected.begin(), selected.end()));
+    }
+    platform.open_file_dialog_pending_ = false;
+    platform.open_file_dialog_completed_ = true;
+  };
+  const auto utf8_path = default_path.u8string();
+  const std::string location(utf8_path.begin(), utf8_path.end());
+  if (mode == PilotFileDialogMode::save) {
+    SDL_ShowSaveFileDialog(
+        callback, this, window_.get(), &kPilotFilter, 1, location.c_str());
+  } else {
+    SDL_ShowOpenFileDialog(callback,
+                           this,
+                           window_.get(),
+                           &kPilotFilter,
+                           1,
+                           location.c_str(),
+                           false);
+  }
   return true;
 }
 
@@ -511,7 +551,25 @@ void SdlPlatform::ApplyWindowMode(bool windowed) {
   if (!window_) {
     return;
   }
-  SDL_SetWindowFullscreen(window_.get(), !windowed);
+  if (!SDL_SetWindowFullscreen(window_.get(), !windowed)) {
+    NovaLog::Warn("window mode change failed: {}", SDL_GetError());
+    return;
+  }
+  SDL_SyncWindow(window_.get());
+  RefreshPlacementAfterResize();
+}
+
+bool SdlPlatform::IsWindowed() const {
+  return !window_ ||
+         (SDL_GetWindowFlags(window_.get()) & SDL_WINDOW_FULLSCREEN) == 0;
+}
+
+bool SdlPlatform::HandlePresentationKey(const SDL_Event &event) {
+  if (event.type != SDL_EVENT_KEY_DOWN || event.key.key != SDLK_F11)
+    return false;
+  if (!event.key.repeat)
+    ApplyWindowMode(!IsWindowed());
+  return true;
 }
 
 SDL_FPoint SdlPlatform::logical_playfield_size() const {
@@ -601,6 +659,10 @@ std::optional<TextInput> SdlPlatform::PollTextEvent() {
   SDL_Event event;
   const bool alt = (SDL_GetModState() & SDL_KMOD_ALT) != 0;
   while (SDL_PollEvent(&event)) {
+    if (narrator_ && narrator_->HandleEvent(*this, event))
+      continue;
+    if (HandlePresentationKey(event))
+      continue;
     if (event.type == SDL_EVENT_QUIT) {
       quit_requested_ = true;
       continue;
@@ -610,6 +672,16 @@ std::optional<TextInput> SdlPlatform::PollTextEvent() {
         event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED) {
       RefreshPlacementAfterResize();
       continue;
+    }
+    if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+      mouse_window_point_ = {event.wheel.mouse_x, event.wheel.mouse_y};
+      mouse_position_ = placement_.ToAuthored(mouse_window_point_);
+      TextInput input;
+      input.key = TextKey::wheel;
+      input.wheel_y = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED
+                          ? -event.wheel.y
+                          : event.wheel.y;
+      return input;
     }
     if (event.type == SDL_EVENT_MOUSE_MOTION) {
       mouse_window_point_ = {event.motion.x, event.motion.y};
@@ -621,6 +693,12 @@ std::optional<TextInput> SdlPlatform::PollTextEvent() {
       mouse_window_point_ = {event.button.x, event.button.y};
       mouse_position_ = placement_.ToAuthored(mouse_window_point_);
       return TextInput{TextKey::primary, '\0', 0xffff, alt};
+    }
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_UP &&
+        event.button.button == SDL_BUTTON_RIGHT) {
+      mouse_window_point_ = {event.button.x, event.button.y};
+      mouse_position_ = placement_.ToAuthored(mouse_window_point_);
+      return TextInput{TextKey::secondary_released};
     }
     if (event.type == SDL_EVENT_KEY_DOWN) {
       // OS key repeats are surfaced, not dropped: the original's event poll
@@ -690,6 +768,16 @@ FlightInput SdlPlatform::PollFlightInput() {
   PumpProbe();
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
+    if (HandlePresentationKey(event))
+      continue;
+    if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+      input.window_mouse_x = event.wheel.mouse_x;
+      input.window_mouse_y = event.wheel.mouse_y;
+      input.scene_zoom_delta += event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED
+                                    ? -event.wheel.y
+                                    : event.wheel.y;
+      continue;
+    }
     if (event.type == SDL_EVENT_QUIT) {
       quit_requested_ = true;
       continue;
@@ -715,7 +803,8 @@ FlightInput SdlPlatform::PollFlightInput() {
       continue;
     }
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
-        event.button.button == SDL_BUTTON_LEFT) {
+        (event.button.button == SDL_BUTTON_LEFT ||
+         event.button.button == SDL_BUTTON_RIGHT)) {
       mouse_window_point_ = {event.button.x, event.button.y};
       const SDL_FPoint point = placement_.ToAuthored(mouse_window_point_);
       mouse_position_ = point;
@@ -723,10 +812,15 @@ FlightInput SdlPlatform::PollFlightInput() {
       input.mouse_y = point.y;
       input.window_mouse_x = mouse_window_point_.x;
       input.window_mouse_y = mouse_window_point_.y;
-      input.primary_clicked = true;
+      input.primary_clicked |= event.button.button == SDL_BUTTON_LEFT;
+      input.secondary_clicked |= event.button.button == SDL_BUTTON_RIGHT;
+      // Leave the release (even a fast same-frame tap) for the radial modal.
+      if (input.secondary_clicked)
+        break;
       continue;
     }
   }
+  input.primary_held = MouseButtonDown(SDL_BUTTON_LEFT);
   const bool *const keys = SDL_GetKeyboardState(nullptr);
   // Virtual held keys from the probe harness (SDL_GetKeyboardState cannot see
   // injected events), merged into the same channel as the physical keys.
@@ -774,17 +868,37 @@ bool SdlPlatform::IsOriginalKeyCodeHeld(std::uint16_t key_code) {
 }
 
 void SdlPlatform::Present() {
+  if (narrator_)
+    narrator_->Draw(*this);
   // Capture while the frame about to be swapped in is still the active render
   // target; SDL_RenderReadPixels after SDL_RenderPresent reads an undefined
   // backbuffer under the GPU backends.
-  probe_.OnPresent(renderer_.get());
+  {
+    const ScopedPlacement capture(*this, PlaceWindow(logical_playfield_size()));
+    probe_.OnPresent(renderer_.get());
+  }
   SDL_RenderPresent(renderer_.get());
+}
+
+game::MissionNarrator &SdlPlatform::narrator() {
+  if (!narrator_)
+    narrator_ = std::make_unique<game::MissionNarrator>();
+  return *narrator_;
+}
+
+SDL_FPoint SdlPlatform::dialog_content_size() const {
+  auto size = logical_playfield_size();
+  if (narrator_ && narrator_->active())
+    size.y -= 50.0F * std::min(ui_scale(), size.x / 560.0F);
+  return size;
 }
 
 std::optional<char> SdlPlatform::PollCommandEvent() {
   PumpProbe();
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
+    if (HandlePresentationKey(event))
+      continue;
     if (event.type == SDL_EVENT_QUIT) {
       quit_requested_ = true;
       continue;
@@ -812,6 +926,8 @@ std::optional<char> SdlPlatform::PollCommandEvent() {
         return 'n';
       case SDLK_O:
         return 'o';
+      case SDLK_S:
+        return 's';
       case SDLK_E:
         return 'e';
       case SDLK_P:
@@ -888,6 +1004,15 @@ SDL_FPoint SdlPlatform::mouse_position() const { return mouse_position_; }
 
 bool SdlPlatform::PrimaryMouseDown() const {
   return (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK) != 0;
+}
+
+bool SdlPlatform::MouseButtonDown(std::uint8_t button) const {
+  const auto physical =
+      window_ && (SDL_GetWindowFlags(window_.get()) & SDL_WINDOW_INPUT_FOCUS)
+          ? SDL_GetMouseState(nullptr, nullptr)
+          : 0;
+  return ((physical | probe_.VirtualMouseButtons()) &
+          SDL_BUTTON_MASK(button)) != 0;
 }
 
 SDL_FPoint SdlPlatform::mouse_window_point() const {

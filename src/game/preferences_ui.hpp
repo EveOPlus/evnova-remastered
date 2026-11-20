@@ -23,25 +23,31 @@ namespace game::preferences_detail {
 // Prefs modal's reused window chrome.
 inline constexpr std::uint16_t kSettingsDialogId = 0xfa3;
 
-// Window/control colours. The original fills the dialog with the current fill
-// colour and frames it with the current RGB colour; at startup those globals
-// are white (g_hud_overlay_text_color) and black (DAT_00733b74). The bevel
-// triples are the RGBColor constants at 0x0056f118..0x0056f12a.
-inline constexpr SDL_Color kWindowFrame{0, 0, 0, 255};
-inline constexpr SDL_Color kWindowFill{255, 255, 255, 255};
-inline constexpr SDL_Color kControlHighlight{195, 195, 195, 255};
-inline constexpr SDL_Color kControlFill{136, 136, 136, 255};
-inline constexpr SDL_Color kControlShadow{58, 58, 58, 255};
-inline constexpr SDL_Color kControlText{0, 0, 0, 255};
+// Shared dark metal palette, with red buttons and readable warm text.
+inline constexpr SDL_Color kWindowFrame{100, 104, 110, 255};
+inline constexpr SDL_Color kWindowFill{22, 24, 28, 255};
+inline constexpr SDL_Color kControlHighlight{150, 153, 158, 255};
+inline constexpr SDL_Color kControlFill{60, 63, 69, 255};
+inline constexpr SDL_Color kControlShadow{8, 9, 12, 255};
+inline constexpr SDL_Color kControlText{232, 229, 222, 255};
 inline constexpr SDL_Color kControlSelectedText{255, 255, 255, 255};
 // Locked controls are drawn light grey (a port addition: the original has no
 // disabled state because these preferences were live toggles).
-inline constexpr SDL_Color kControlDisabledFill{205, 205, 205, 255};
-inline constexpr SDL_Color kControlDisabledHighlight{222, 222, 222, 255};
-inline constexpr SDL_Color kControlDisabledShadow{150, 150, 150, 255};
-inline constexpr SDL_Color kControlDisabledText{160, 160, 160, 255};
+inline constexpr SDL_Color kControlDisabledFill{35, 37, 42, 255};
+inline constexpr SDL_Color kControlDisabledHighlight{75, 78, 84, 255};
+inline constexpr SDL_Color kControlDisabledShadow{12, 13, 16, 255};
+inline constexpr SDL_Color kControlDisabledText{124, 127, 134, 255};
 // Tint applied to the PICT slider arrows when their control is locked.
 inline constexpr std::uint8_t kDisabledArrowTint = 150;
+
+// Remake menu chrome: the original metal surrounds and red controls guide
+// this shared palette, including the added Save Pilot and narration controls.
+inline void DrawPanel(SDL_Renderer *renderer, const SDL_FRect &box) {
+  DrawControlBevel(
+      renderer, box, kWindowFill, kControlHighlight, kControlShadow);
+  SDL_SetRenderDrawColor(renderer, 112, 28, 32, 255);
+  SDL_RenderLine(renderer, box.x + 3, box.y + 3, box.x + box.w - 4, box.y + 3);
+}
 
 // Native slider-arrow PICTs (STR# 0x86/0x87).
 inline constexpr std::uint16_t kSoundArrowUpPict = 0x0086;
@@ -86,7 +92,7 @@ inline void DrawCheckBox(SdlPlatform &platform,
       disabled ? kControlDisabledHighlight : kControlHighlight;
   const SDL_Color shadow = disabled ? kControlDisabledShadow : kControlShadow;
   const SDL_Color text = disabled ? kControlDisabledText : kControlText;
-  const SDL_Color check = disabled ? kControlDisabledText : kWindowFill;
+  const SDL_Color check = disabled ? kControlDisabledText : kControlText;
   const SDL_FRect glyph{box.x, box.y, 17.0F, 17.0F};
   // Checked state inverts the bevel (dark top/left, light bottom/right),
   // exactly as UiWindow_Draw 0x004d0d00 does for DITL control types 5/6.
@@ -166,11 +172,26 @@ inline void DrawButton(SdlPlatform &platform,
                        NovaFontCache &font_cache,
                        const SDL_FRect &box,
                        std::string_view label,
-                       bool highlighted) {
+                       bool highlighted,
+                       bool enabled = true,
+                       float font_size = 12.0F) {
   SDL_Renderer *renderer = platform.renderer();
   const SDL_Color highlight = highlighted ? kControlShadow : kControlHighlight;
   const SDL_Color shadow = highlighted ? kControlHighlight : kControlShadow;
   DrawControlBevel(renderer, box, kControlFill, highlight, shadow);
+  const SDL_FRect face{box.x + 3, box.y + 3, box.w - 6, box.h - 6};
+  SDL_SetRenderDrawColor(renderer,
+                         enabled ? (highlighted ? 106 : 74) : 36,
+                         enabled ? 18 : 36,
+                         enabled ? 23 : 40,
+                         255);
+  SDL_RenderFillRect(renderer, &face);
+  SDL_SetRenderDrawColor(renderer,
+                         enabled ? (highlighted ? 145 : 104) : 50,
+                         enabled ? 38 : 50,
+                         enabled ? 43 : 55,
+                         255);
+  SDL_RenderLine(renderer, face.x, face.y, face.x + face.w, face.y);
   SDL_SetRenderDrawColor(renderer,
                          kWindowFrame.r,
                          kWindowFrame.g,
@@ -180,9 +201,11 @@ inline void DrawButton(SdlPlatform &platform,
   NovaText_DrawCentered(platform,
                         font_cache,
                         NovaFontFamily::kGeneva,
-                        12.0F,
+                        font_size,
                         kNovaFontStyleRegular,
-                        highlighted ? kControlSelectedText : kControlText,
+                        !enabled      ? kControlDisabledText
+                        : highlighted ? kControlSelectedText
+                                      : kControlText,
                         box.x + 4.0F,
                         box.x + box.w - 4.0F,
                         box.y + box.h / 2.0F + 4.0F,

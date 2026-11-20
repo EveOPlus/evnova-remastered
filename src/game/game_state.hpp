@@ -822,15 +822,18 @@ struct TravelState {
   // from the current system; otherwise the jump falls back to the nearest
   // available travel point.
   std::int16_t starmap_destination_system_id = -1;
-  // The plotted starmap route (Ghidra DAT_00735404, 32 shorts; 0xffff = empty
-  // slot): route[0] is the current system and route[1..] the planned hops.
-  // Shift-clicking systems in the starmap appends/truncates hops; a plain
+  // The plotted starmap route (Ghidra DAT_00735404; 0xffff = empty slot).
+  // The remake expands the original 32 slots to the 0x800-system galaxy limit
+  // so automatic routes need not stop after 31 jumps. This is runtime state,
+  // not part of the original pilot-file layout.
+  // route[0] is the current system and route[1..] the planned hops.
+  // Shift-click plans the shortest known route from the current system; a plain
   // click plots only the immediate destination above. When a jump arrives at
   // route[1] the hop is consumed (System_NormalizePlannedRouteToCurrentSystem
   // 0x004a7fc0) and the HUD travel slot re-syncs from the next hop
   // (NovaUi_SyncTravelSelectionFromStarmapRoute 0x004a8080).
-  std::array<std::int16_t, 0x20> starmap_route = [] {
-    std::array<std::int16_t, 0x20> route{};
+  std::array<std::int16_t, 0x800> starmap_route = [] {
+    std::array<std::int16_t, 0x800> route{};
     route.fill(-1);
     return route;
   }();
@@ -859,7 +862,7 @@ struct TravelState {
   // was engaged), -1 unless travel is active. The new-game flow also uses
   // selected_dest_id as its initial target.
   std::int16_t engaged_stellar_id = -1;
-  // The resolved destination system resource id for the engaged jump.
+  // The resolved zero-based destination system index for the engaged jump.
   std::int16_t destination_system_id = -1;
   // Hyperspace-mode latch (H): when set, leading Backslash destination-system
   // presses (cycle_destination_*) choose the next jump system, and the HUD
@@ -1215,6 +1218,8 @@ struct FreeflightObjectState {
   // objects with this set, so asteroid YieldType resource-boxes are scoopable
   // while jettisoned cargo pods are not.
   bool persistent = false; // +0x24
+  // Remake automation identity; never serialized or used by collision rules.
+  std::uint64_t mining_group = 0;
 
   // Per-frame opaque-pixel mask for the object's current spin frame, resolved
   // by RefreshCollisionMasks (collision.cpp) for the mining-scoop overlap.
@@ -1287,6 +1292,8 @@ struct AsteroidState {
   CollisionMaskBinding collision_mask;
 
   bool active = false; // +0x20
+  // Shared by this asteroid, its fragments and yielded cargo for auto-mining.
+  std::uint64_t mining_group = 0;
 
   // Pool size for the 16-slot AsteroidState table.
   static constexpr std::size_t kPoolSize = 16;
@@ -1421,6 +1428,15 @@ struct GameState {
     float zoom_scale = 1.0F;
     bool zoom_command_latch = false;
   } route_map;
+
+  // Remake floating navigation panel; session presentation state, not pilot
+  // data.
+  struct {
+    bool visible = false;
+    float x = 24, y = 80;
+    float zoom = .75F, pan_x = 0, pan_y = 0;
+    std::int16_t selected = -1, centered_system = -1;
+  } navigation_panel;
 
   // Galaxy starmap view state (Ghidra g_starmap_zoom 0x005759d8,
   // g_starmap_pan_origin_x/y 0x005997b4). Zoom is a world->screen DIVISOR
@@ -1932,6 +1948,7 @@ struct GameState {
   // drift. The records are ASTEROID / drift-debris chars (r\xf6id family), not
   // NPC ships. Slots are found by scanning for `active == false`.
   std::array<AsteroidState, AsteroidState::kPoolSize> asteroid_pool{};
+  std::uint64_t next_mining_group = 1;
 
   // Half the logical flight play area, in pixels (Ghidra g_viewport_center_x
   // 0x005997b8 / g_viewport_center_y 0x005997ba, set by

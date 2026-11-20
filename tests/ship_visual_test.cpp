@@ -1,6 +1,7 @@
 #include "game/game_state.hpp"
 #include "game/outfit.hpp"
 #include "game/ship_visual.hpp"
+#include "game/weapon.hpp"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -17,6 +18,47 @@ void SetShipClass(GameState &state, const ShipClass &cls) {
 }
 
 } // namespace
+
+TEST_CASE("miner's folding animation completes and releases secondary fire",
+          "[ship][visual][mining]") {
+  GameState state;
+  ShipClass cls;
+  cls.base_set_count = cls.animation_cycle_count = 6;
+  cls.sprite_behavior_flags = 0xc2;
+  cls.combat_state_init_range = 5;
+  SetShipClass(state, cls);
+  auto &player = state.player;
+  player.is_active = true;
+  player.ship_class_id = 0;
+  player.ship_instance_id = 0;
+  player.armor_points = 100;
+  player.waypoint_arrival_marker_b = 5;
+  player.active_weapon_bank_slot = 0;
+  player.weapon_banks[0].mounted = 6;
+  state.scenario.weapons.resize(1);
+  auto &weapon = state.scenario.weapons[0];
+  weapon.weapon_mode_code = -1;
+  weapon.flags = 2;
+  weapon.ammo_type = -1;
+  weapon.projectile_speed = 600;
+  weapon.lifetime_ticks = 20;
+  for (int i = 0; i < 100 && state.active_shots.empty(); ++i) {
+    state.tick_60hz += 1;
+    NovaWeapon_TickPlayerWeaponCommands(
+        state, {.fire_secondary_held = true}, .63F);
+    NovaShip_TickSpriteAnimation(state, player, .63F);
+  }
+  CHECK(player.waypoint_arrival_marker_b == 0);
+  CHECK_FALSE(state.active_shots.empty());
+  // The shared timer belongs to folding only when Flag 0x2 is set; carrier
+  // artwork (Flag 0x4) must not accidentally advance it.
+  state.scenario.ships[0].sprite_behavior_flags = 4;
+  player.waypoint_arrival_marker_b = 5;
+  player.waypoint_arrival_marker_a = -1;
+  for (int i = 0; i < 50; ++i)
+    NovaShip_TickSpriteAnimation(state, player, 1);
+  CHECK(player.waypoint_arrival_marker_b == 5);
+}
 
 TEST_CASE("passive cloak recovery follows the original raw-call cadence",
           "[ship][visual][timing]") {

@@ -1,61 +1,73 @@
-# Escape Velocity Nova recompilation
+# EV Nova Remastered
 
-C++23 reimplementation project for the *Escape Velocity Nova* engine. The original game data and reverse-engineering artefacts remain local and are intentionally not versioned.
+An unofficial community fork of [wraitii/evnova-decomp](https://github.com/wraitii/evnova-decomp),
+**Lancelot de Ferrière's C++23/SDL3 reimplementation of Escape Velocity Nova**.
+This fork adds modern controls and presentation while retaining the original
+ship, planet and interface designs. Upstream history and the original
+[MIT license](LICENSE.txt) are preserved.
 
-The reimplementation is based on the [Windows Community Edition](https://escape-velocity.games), since that's the "latest patch" for Nova.  
-One exception: the hyperjump animation mimics the original Mac behaviour with fade-in/out.
+**[Credits and contributors](CREDITS.md) · [Notices](NOTICE.md) ·
+[Controls](docs/modern_controls.md) · [Windows build](docs/local_windows_build.md)**
 
-## Scope
+## Playing on Windows
 
-I want to get as close as possible to 100% feature parity, including original quirks. This will probably not be achieved anytime soon, as RNG & exact timing is quite tricky to get right. However, in Nova's case I don't think this matters enormously to get the feel 100% right, so that's what I'm going for.
+Build the game using the [Windows guide](docs/local_windows_build.md).
+Prebuilt releases are currently withheld while a Windows Security detection
+on the local test-driver executable is investigated. The detection has not
+been established as a false positive.
 
-Relation to:
-- Cosmic Frontier: an Override remake. I suppose Cosmic Frontier could be finished using this engine.
-- NovaSwift: this decompilation is much closer in fidelity to the original Nova behaviour.
-- Singularity Horizon: unclear
+Open `evnova.exe`. On a new installation, **Download and Set Up**
+fetches Community Edition and ARPIA2 from
+[download.escape-velocity.games](https://download.escape-velocity.games/),
+checks their pinned SHA-256 hashes, and keeps the original documentation.
+You can instead choose an existing installation with **Locate EV Nova.exe**.
 
-## Current status
+The download is approximately 127 MB. Existing saves and plug-ins are not
+replaced. ARPIA2 remains an optional switch in **Set Prefs > Extra Prefs**.
+See [data setup](docs/game_data_setup.md) for offline setup and movie conversion.
 
-I played through the Bounty Hunter / Rebel storyline, unlocked hypergates. So I'd say 100% playable, maybe 99% complete for _vibes_. There are probably remaining bugs, however.
-Remaining missing pieces are small, e.g. shield bubbles, anti-stellar weapons, and a few highly specific behaviours that stock nova didn't test but plug-ins might.
-The quicktime movies (in the bar for example) are also currently unsupported.
+Game data, ARPIA2 resources, fonts, voice models, pilot saves and enhanced game
+art are **not bundled in this Git repository or its engine-only releases**.
+They have separate terms; see [credits](CREDITS.md). This is not an official
+Ambrosia Software, ATMOS or ARPIA2 release.
 
-Many parts are not yet deterministically reproducible, so there will be minor differences in AI tick rate & the like that lead to a technically different gameplay experience.
+## Features in this fork
 
-## Extra features / divergences
+- Hold the mouse to steer; release to brake. Right-click radial actions cover
+  hailing, boarding, docking and asteroid mining.
+- Modern resolutions, fullscreen, sharper rendering and independently zoomable
+  world, radar and maps. Optional locally generated sprite packs keep the
+  original designs; see [remastered graphics](docs/remastered_graphics.md).
+- Shift-click routes. J jumps once; double-J follows the route. A compact
+  floating navigation map stays open in flight.
+- System Markets compares every locally traded good and held cargo. Select a
+  market column and choose Auto Dock to fly there and land.
+- Save/Open Pilot file pickers, larger dialogs and consistent themed controls.
+- Optional [local mission and hail narration](docs/narration.md), with selectable
+  voices installed separately.
+- [ARPIA2 compatibility](docs/arpia2.md), with all three optional extras under
+  one setting and separate campaign saves.
+- A [direct test driver](docs/windows_test_driver.md) for isolated testing.
+  Player releases have its control listener disabled.
 
-The reimplementation exposes "extra preferences" in the prefs dialog. You can set scaling independently for all UI/HUD, the in-game flight scene, and the mission dialog specifically because 9pt geneva will damage your eyesight.
-The port also fixes a number of known bugs, some of which can be toggled on/off. I maintain a full list of known bugs/quirks [here](docs/known_original_bugs.md).
-Finally, it's rendering on Hi-DPI properly by default. For now, the simulation speed is capped like the original Nova (mostly 30/48fps depending), though I plan to unlock that later.
+## Status and provenance
 
-## Game data
+The original engine implementation and research notes come from the upstream
+project; this fork began at `e3dd30407939296bf19e96f94a499cc6bb2cafd1`.
+Windows gameplay and the listed additions have been exercised through builds,
+unit checks and isolated driver scenarios. A full playthrough of every stock
+or ARPIA2 storyline has not been verified. Original timing, AI and other
+fidelity gaps remain documented in the source and progress trackers.
 
-The reimplementation runs on an installed copy of the Windows CE data. That data is not versioned here.
-The game asks for the Community Edition .exe when starting so it can locate the data, unles it can find it automatically. It checks:
-- the directory next to the executable,
-- `EV Nova/` relative to the working directory,
-- `../../../EV Nova` relative to the working directory (for tests).
+Development uses AI assistance, including OpenAI Codex. Claims about testing
+apply only to the checks actually performed, not complete behavioral parity.
 
-User files are stored at `SDL_GetPrefPath("Ambrosia Software", "EV Nova")`: on macOS `~/Library/Application Support/Ambrosia Software/EV Nova/`.
+## Source and data licenses
 
-### Plug-ins
-
-The reimplementation loads windows & mac-os plug-ins, so there's technically no need to convert. (Note: macos dcmp-compressed data is unsupported but I really doubt this affects any plug-in). You can put them in the regular CE plugin folder or in your user-specific folder.
-
-Total conversions are currently not particularly supported (you'd have to replace files manually), I plan to implement some sort of mod manager at some point here.
-
-
-## AI slop disclaimer
-
-Most of this repo's code was written by AI agents, mostly various versions of GPT 5.2 to 5.6. Bit of GLM 5.3 flash, deepseek flash. I've probably directed a lot of the actual naming or things. But I haven't really checked the code, mostly tested behaviour.
-
-## Quick legal disclaimer + License
-
-Everything I have copyright over in this repository is licenced under MIT (see LICENSE.txt).  
-This repo was mostly written using 'driven' AI, so that muddies the water. Further muddying the water is that this is a reimplementation of the original engine via decompilation, which is in a kinda grey area all of its own.  
-In Nova's case, as far as I can tell, the original copyright holder here for the engine is now Matt Burch, the original programmer at Ambrosia Software. So if you intend to do something with any of the code here, I'd ask him. I haven't yet contacted him about this project, either, so dragons be here.  
-I choose to release the repo because I believe this is legally defensible regardless, and genuinely useful. Plus the game is definitely abandonware, even if that isn't really a thing.  
-As for the assets, that's probably under ATMOS copyright, and I think Cosmic Frontier is the closet to an answer you'll get. This repository sidesteps that problem by not providing them.
+The original engine's MIT notice remains in [LICENSE.txt](LICENSE.txt).
+[Third-party notices](licenses/README.md) and [full credits](CREDITS.md) explain
+the separately licensed libraries, game and plug-in content, models and tools.
+The source license does not grant rights over downloaded game assets.
 
 ## Prerequisites
 
@@ -115,4 +127,4 @@ Run the game with:
 build\release\src\evnova.exe        # Windows
 ```
 
-The optional probe/control harness ([docs/probe_harness.md](docs/probe_harness.md)) is built by default on macOS/Linux and off on Windows, since its transport is a POSIX socket server. Toggle it with `-DEVNOVA_ENABLE_PROBE=ON|OFF` when configuring.
+The optional probe/control harness ([docs/probe_harness.md](docs/probe_harness.md)) supports POSIX sockets and Windows Winsock. It is built by default on macOS/Linux and off in ordinary Windows player builds. Toggle it with `-DEVNOVA_ENABLE_PROBE=ON|OFF` when configuring.

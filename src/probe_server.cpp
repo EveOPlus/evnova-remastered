@@ -5,15 +5,24 @@
 
 #include <SDL3/SDL.h>
 
-#include <arpa/inet.h>
 #include <cstring>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -23,10 +32,45 @@ namespace {
 constexpr auto kJobWait = std::chrono::seconds(10);
 constexpr auto kFrameWait = std::chrono::seconds(2);
 
-void WriteAll(int fd, const std::string &data) {
+#ifdef _WIN32
+using ProbeSocket = SOCKET;
+constexpr ProbeSocket kInvalidSocket = INVALID_SOCKET;
+
+void CloseSocket(ProbeSocket socket) { ::closesocket(socket); }
+#else
+using ProbeSocket = int;
+constexpr ProbeSocket kInvalidSocket = -1;
+
+void CloseSocket(ProbeSocket socket) { ::close(socket); }
+#endif
+
+void SetSocketTimeouts(ProbeSocket socket) {
+#ifdef _WIN32
+  const DWORD timeout = 2000;
+#else
+  const timeval timeout{2, 0};
+#endif
+  for (const int option : {SO_RCVTIMEO, SO_SNDTIMEO}) {
+    ::setsockopt(socket,
+                 SOL_SOCKET,
+                 option,
+                 reinterpret_cast<const char *>(&timeout),
+                 sizeof(timeout));
+  }
+}
+
+void WriteAll(ProbeSocket fd, const std::string &data) {
   std::size_t sent = 0;
   while (sent < data.size()) {
-    const ssize_t n = ::send(fd, data.data() + sent, data.size() - sent, 0);
+    const int count = static_cast<int>(
+        std::min(data.size() - sent,
+                 static_cast<std::size_t>(std::numeric_limits<int>::max())));
+#ifdef MSG_NOSIGNAL
+    constexpr int flags = MSG_NOSIGNAL;
+#else
+    constexpr int flags = 0;
+#endif
+    const auto n = ::send(fd, data.data() + sent, count, flags);
     if (n <= 0) {
       return;
     }
@@ -202,48 +246,75 @@ bool ProbeServer::Start(int port) {
   if (running_.load()) {
     return true;
   }
+  Stop(); // Join a listener that failed during its previous startup.
+  if (port < 1 || port > 65535) {
+    NovaLog::Error("probe: invalid port {}", port);
+    return false;
+  }
+#ifdef _WIN32
+  WSADATA data{};
+  const int error = WSAStartup(MAKEWORD(2, 2), &data);
+  if (error != 0) {
+    NovaLog::Error("probe: WSAStartup failed: {}", error);
+    return false;
+  }
+  socket_runtime_initialized_ = true;
+#endif
   port_.store(port);
   running_.store(true);
   thread_ = std::thread([this, port] { AcceptLoop(port); });
-  NovaLog::Info("probe: HTTP harness listening on 127.0.0.1:{} "
-                "(docs/probe_harness.md)",
-                port);
   return true;
 }
 
 void ProbeServer::Stop() {
-  if (!running_.exchange(false)) {
-    return;
-  }
+  const bool was_running = running_.exchange(false);
   // Wake the accept loop with a dummy connection, then join. If the listener
   // never bound (startup failure) there is nothing to wake.
-  if (port_.load() != 0) {
-    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (fd >= 0) {
+  if (was_running && port_.load() != 0) {
+    const ProbeSocket fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd != kInvalidSocket) {
       sockaddr_in address{};
       address.sin_family = AF_INET;
       address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
       address.sin_port = htons(static_cast<std::uint16_t>(port_.load()));
       (void)::connect(
           fd, reinterpret_cast<sockaddr *>(&address), sizeof(address));
-      ::close(fd);
+      CloseSocket(fd);
     }
   }
   sync_cv_.notify_all();
   if (thread_.joinable()) {
     thread_.join();
   }
+#ifdef _WIN32
+  if (socket_runtime_initialized_) {
+    WSACleanup();
+    socket_runtime_initialized_ = false;
+  }
+#endif
 }
 
 void ProbeServer::AcceptLoop(int port) {
-  const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-  if (fd < 0) {
+  const ProbeSocket fd = ::socket(AF_INET, SOCK_STREAM, 0);
+  if (fd == kInvalidSocket) {
     NovaLog::Error("probe: socket() failed");
     running_.store(false);
     return;
   }
   int one = 1;
-  ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+#ifdef _WIN32
+  constexpr int address_option = SO_EXCLUSIVEADDRUSE;
+#else
+  constexpr int address_option = SO_REUSEADDR;
+#endif
+  ::setsockopt(fd,
+               SOL_SOCKET,
+               address_option,
+               reinterpret_cast<const char *>(&one),
+               sizeof(one));
+#ifdef SO_NOSIGPIPE
+  ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+#endif
   sockaddr_in address{};
   address.sin_family = AF_INET;
   address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -251,20 +322,24 @@ void ProbeServer::AcceptLoop(int port) {
   if (::bind(fd, reinterpret_cast<sockaddr *>(&address), sizeof(address)) < 0 ||
       ::listen(fd, 4) < 0) {
     NovaLog::Error("probe: bind/listen on 127.0.0.1:{} failed", port);
-    ::close(fd);
+    CloseSocket(fd);
     running_.store(false);
     return;
   }
+  NovaLog::Info("probe: HTTP harness listening on 127.0.0.1:{} "
+                "(docs/probe_harness.md)",
+                port);
 
   while (running_.load()) {
-    const int conn = ::accept(fd, nullptr, nullptr);
-    if (conn < 0) {
+    const ProbeSocket conn = ::accept(fd, nullptr, nullptr);
+    if (conn == kInvalidSocket) {
       continue;
     }
     if (!running_.load()) { // Stop()'s wake-up connection
-      ::close(conn);
+      CloseSocket(conn);
       break;
     }
+    SetSocketTimeouts(conn);
     // Read until the end of the headers, then Content-Length body bytes.
     std::string raw;
     char buffer[4096];
@@ -272,7 +347,7 @@ void ProbeServer::AcceptLoop(int port) {
       return raw.find("\r\n\r\n") != std::string::npos;
     };
     while (!header_end() && raw.size() < 64 * 1024) {
-      const ssize_t n = ::recv(conn, buffer, sizeof(buffer), 0);
+      const auto n = ::recv(conn, buffer, sizeof(buffer), 0);
       if (n <= 0) {
         break;
       }
@@ -304,7 +379,7 @@ void ProbeServer::AcceptLoop(int port) {
             static_cast<std::size_t>(std::atoi(head.c_str() + pos + 15));
       }
       while (rest.size() < content_length) {
-        const ssize_t n = ::recv(conn, buffer, sizeof(buffer), 0);
+        const auto n = ::recv(conn, buffer, sizeof(buffer), 0);
         if (n <= 0) {
           break;
         }
@@ -327,9 +402,9 @@ void ProbeServer::AcceptLoop(int port) {
     response += "Connection: close\r\n\r\n";
     response += body_out;
     WriteAll(conn, response);
-    ::close(conn);
+    CloseSocket(conn);
   }
-  ::close(fd);
+  CloseSocket(fd);
 }
 
 void ProbeServer::HandleRequest(const std::string &method,
@@ -378,7 +453,7 @@ void ProbeServer::HandleRequest(const std::string &method,
       return;
     }
     bool timed_out = false;
-    body_out = SubmitJob([&provider, q] { return provider(q); }, timed_out);
+    body_out = SubmitJob([provider, q] { return provider(q); }, timed_out);
     if (timed_out) {
       status = "504 Gateway Timeout";
       body_out = "probe: main thread did not service the request in time";
@@ -721,6 +796,62 @@ void ProbeServer::HandleRequest(const std::string &method,
     return;
   }
 
+  if (path == "/probe/mouse" && method == "POST") {
+    const auto x = JsonIntField(body, "x");
+    const auto y = JsonIntField(body, "y");
+    const auto button_name = JsonStringField(body, "button");
+    const auto down = JsonBoolField(body, "down");
+    const int wheel = JsonIntField(body, "wheel").value_or(0);
+    if (!x || !y ||
+        (button_name &&
+         ((!down) || (*button_name != "left" && *button_name != "right")))) {
+      status = "400 Bad Request";
+      body_out = "probe: supply x,y and optionally button:left|right with "
+                 "down:true|false";
+      return;
+    }
+    SDL_Event motion{};
+    motion.type = SDL_EVENT_MOUSE_MOTION;
+    motion.motion.x = static_cast<float>(*x);
+    motion.motion.y = static_cast<float>(*y);
+    SDL_Event button{};
+    if (button_name) {
+      button.type =
+          *down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+      button.button.button =
+          *button_name == "left" ? SDL_BUTTON_LEFT : SDL_BUTTON_RIGHT;
+      button.button.down = *down;
+      button.button.x = motion.motion.x;
+      button.button.y = motion.motion.y;
+      const std::lock_guard lock(keys_mutex_);
+      const auto mask = SDL_BUTTON_MASK(button.button.button);
+      if (*down)
+        virtual_mouse_buttons_ |= mask;
+      else
+        virtual_mouse_buttons_ &= ~mask;
+    }
+    {
+      const std::lock_guard lock(sync_);
+      key_events_.push_back(motion);
+      if (button_name)
+        key_events_.push_back(button);
+      if (wheel != 0) {
+        SDL_Event scroll{};
+        scroll.type = SDL_EVENT_MOUSE_WHEEL;
+        scroll.wheel.y = static_cast<float>(wheel);
+        scroll.wheel.mouse_x = motion.motion.x;
+        scroll.wheel.mouse_y = motion.motion.y;
+        scroll.wheel.direction = SDL_MOUSEWHEEL_NORMAL;
+        key_events_.push_back(scroll);
+      }
+    }
+    sync_cv_.notify_all();
+    status = "200 OK";
+    content_type = "application/json";
+    body_out = "{\"ok\":true}";
+    return;
+  }
+
   if (path == "/probe/key" && method == "POST") {
     const auto key_name = JsonStringField(body, "key");
     if (!key_name) {
@@ -741,6 +872,7 @@ void ProbeServer::HandleRequest(const std::string &method,
       SDL_Event event{};
       event.type = is_down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
       event.key.key = code;
+      event.key.scancode = SDL_GetScancodeFromKey(code, nullptr);
       event.key.down = is_down;
       return event;
     };
@@ -951,6 +1083,11 @@ void ProbeServer::OnPresent(SDL_Renderer *renderer) {
     ++frame_seq_;
     frame_cv_.notify_all();
   }
+}
+
+SDL_MouseButtonFlags ProbeServer::VirtualMouseButtons() const {
+  const std::lock_guard lock(keys_mutex_);
+  return virtual_mouse_buttons_;
 }
 
 bool ProbeServer::VirtualKey(SDL_Scancode scancode) const {

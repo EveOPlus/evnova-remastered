@@ -8,6 +8,7 @@
 #include "../sdl_music.hpp"
 #include "../sdl_platform.hpp"
 #include "../util/geometry.hpp"
+#include "about_dialog.hpp"
 #include "control_bevel.hpp"
 #include "nova_font.hpp"
 #include "preferences_extra.hpp"
@@ -79,7 +80,6 @@ ReadLe16(const std::array<std::uint8_t, kPrefsFileSize> &bytes,
 
 // The locked-control arrow tint (the shared colours live in
 // preferences_ui.hpp).
-constexpr std::uint8_t kDisabledArrowTint = 150;
 
 // Port-only "Extra Prefs" button appended to the Settings DITL layout (the
 // original 25 items have no free slot). The index is deliberately far outside
@@ -88,6 +88,10 @@ constexpr std::size_t kExtraPrefsButtonIndex = 1000;
 // Placed just above the Key Settings button (DITL item 16, x=49..184,
 // y=263..283), left-aligned with it, on the empty bottom band (DITL item 2).
 constexpr SDL_FRect kExtraPrefsButtonRect{49.0F, 242.0F, 135.0F, 20.0F};
+constexpr std::size_t kNarrationButtonIndex = 1001;
+constexpr std::size_t kAboutButtonIndex = 1002;
+constexpr SDL_FRect kAboutButtonRect{194, 263, 101, 20};
+constexpr SDL_FRect kNarrationButtonRect{194.0F, 242.0F, 101.0F, 20.0F};
 
 // Extra Prefs dialog geometry lives in preferences_extra.cpp; only the button
 // that opens it stays in the original Settings DITL layout below.
@@ -174,6 +178,27 @@ struct SettingsLayout {
   extra_button.bottom = static_cast<std::int16_t>(kExtraPrefsButtonRect.y +
                                                   kExtraPrefsButtonRect.h);
   out.items.push_back(extra_button);
+  NovaDialogItem narration_button;
+  narration_button.index = kNarrationButtonIndex;
+  narration_button.type = 4;
+  narration_button.title = "Narration";
+  narration_button.left = static_cast<std::int16_t>(kNarrationButtonRect.x);
+  narration_button.top = static_cast<std::int16_t>(kNarrationButtonRect.y);
+  narration_button.right = static_cast<std::int16_t>(kNarrationButtonRect.x +
+                                                     kNarrationButtonRect.w);
+  narration_button.bottom = static_cast<std::int16_t>(kNarrationButtonRect.y +
+                                                      kNarrationButtonRect.h);
+  out.items.push_back(narration_button);
+  auto about_button = narration_button;
+  about_button.index = kAboutButtonIndex;
+  about_button.title = "About Nova";
+  about_button.top = 263;
+  about_button.bottom = 283;
+  out.items.push_back(about_button);
+  out.window.h += 28;
+  out.items.front().top += 28;
+  out.items.front().bottom += 28;
+
   out.from_ditl = true;
   return out;
 }
@@ -224,11 +249,19 @@ LoadKeySettingsBackdrop(SdlPlatform &platform) {
   if (!data) {
     return {};
   }
-  const auto image = Resource_LoadPictAsImage(*data);
+  auto image = Resource_LoadPictAsImage(*data);
   if (!image) {
     NovaLog::Todo("Key Settings backdrop PICT 0x{:04x} failed to decode",
                   kKeySettingsBackdropPict);
     return {};
+  }
+  // Retain the authored command labels, recoloured into the shared menu
+  // palette.
+  for (std::size_t i = 0; i + 3 < image->rgba_pixels.size(); i += 4) {
+    const float ink = 1.0F - static_cast<float>(image->rgba_pixels[i]) / 255.0F;
+    image->rgba_pixels[i] = static_cast<std::uint8_t>(22 + ink * 210);
+    image->rgba_pixels[i + 1] = static_cast<std::uint8_t>(24 + ink * 205);
+    image->rgba_pixels[i + 2] = static_cast<std::uint8_t>(28 + ink * 194);
   }
   return SdlTexture::Create(
       platform.renderer(), image->width, image->height, image->rgba_pixels);
@@ -472,7 +505,8 @@ FindKeyBindingConflict(const std::array<std::uint16_t, 34> &bindings) {
   return std::nullopt;
 }
 
-// @port 0x0048b860 85% ui
+// @port 0x0048b860 85% ui,divergence
+// DIVERGENCE(original): authored key labels use the shared dark menu palette.
 // TODO(decomp): exact native key-name table text/metrics remain incomplete.
 // Preferences and Key Settings use native local DLOG geometry with contained
 // placement and scoped restoration.
@@ -493,15 +527,7 @@ void DrawKeySettingsDialog(SdlPlatform &platform,
   const auto &window = layout.window;
   // UiWindow_Draw clears and frames the complete DLOG surface before calling
   // Menu_KeySettingsDraw. PICT 0x8b covers only item 4.
-  SDL_SetRenderDrawColor(
-      renderer, kWindowFill.r, kWindowFill.g, kWindowFill.b, SDL_ALPHA_OPAQUE);
-  SDL_RenderFillRect(renderer, &window);
-  SDL_SetRenderDrawColor(renderer,
-                         kWindowFrame.r,
-                         kWindowFrame.g,
-                         kWindowFrame.b,
-                         SDL_ALPHA_OPAQUE);
-  SDL_RenderRect(renderer, &window);
+  DrawPanel(renderer, window);
 
   // Item 4 (zero-based item 3) is the native 582x307 PICT frame inset in the
   // wider 594x353 DLOG. The resource must not be stretched to the DLOG bounds.
@@ -642,7 +668,7 @@ void NovaPreferences::ResetToDefaults() {
   sound_volume = 5;
   brightness = 3;
   share_processor_time = true;
-  quicktime_movies = true; // inverted: 1 = movies off (playback unsupported)
+  quicktime_movies = false; // inverted: 0 = movies enabled
   smoke_trails = false;
   run_in_window = true;
   ship_animations = true;
@@ -662,9 +688,6 @@ void NovaPreferences::ResetToDefaults() {
 // defaults cannot drift apart (see the header contract).
 void NovaPrefs_ApplyLockedPreferences(NovaPreferences &prefs) {
   prefs.share_processor_time = true;
-  // Inverted flag (1 = movies off). The port does not play QuickTime movies,
-  // so this is forced off rather than the original's default of on.
-  prefs.quicktime_movies = true;
   prefs.smoke_trails = false; // inverted: false = trails on
   prefs.ship_animations = true;
   prefs.engine_glows = true;
@@ -801,7 +824,6 @@ namespace {
 [[nodiscard]] bool SettingsCheckboxLocked(std::size_t index) {
   switch (index) {
   case 1:  // Share Processor Time
-  case 8:  // QuickTime Movies
   case 9:  // Smoke Trails
   case 11: // Ship Animations
   case 12: // Engine Glows
@@ -938,6 +960,7 @@ void DrawSettingsDialog(SdlPlatform &platform,
                         std::optional<std::size_t> hover,
                         const std::function<void()> &render_background) {
   SDL_Renderer *renderer = platform.renderer();
+  (void)artwork;
   DrawOwningScreen(platform, render_background);
   platform.SetPlacement(PlaceContained({layout.window.w, layout.window.h},
                                        platform.logical_playfield_size(),
@@ -947,18 +970,8 @@ void DrawSettingsDialog(SdlPlatform &platform,
   }
 
   const auto &win = layout.window;
-  // UiWindow_Draw fills the entire DLOG surface white and draws one black
-  // frame. It does not add the blue panel or inset frame used by the old
-  // provisional renderer.
-  SDL_SetRenderDrawColor(
-      renderer, kWindowFill.r, kWindowFill.g, kWindowFill.b, SDL_ALPHA_OPAQUE);
-  SDL_RenderFillRect(renderer, &win);
-  SDL_SetRenderDrawColor(renderer,
-                         kWindowFrame.r,
-                         kWindowFrame.g,
-                         kWindowFrame.b,
-                         SDL_ALPHA_OPAQUE);
-  SDL_RenderRect(renderer, &win);
+  // Shared menu chrome surrounds the original DITL control layout.
+  DrawPanel(renderer, win);
 
   // Title band header (item 18), centred Chicago text.
   const NovaDialogItem *title = nullptr;
@@ -1019,26 +1032,11 @@ void DrawSettingsDialog(SdlPlatform &platform,
     case 0x40: // slider arrow (upper cell = up, lower = down)
     {
       const bool disabled = SettingsSliderLocked(item.index);
-      if (const auto *texture = item.index == 6 || item.index == 25
-                                    ? artwork.arrow_up.get()
-                                    : artwork.arrow_down.get();
-          texture != nullptr) {
-        SDL_Texture *const tex = texture->get();
-        if (disabled) {
-          SDL_SetTextureColorMod(
-              tex, kDisabledArrowTint, kDisabledArrowTint, kDisabledArrowTint);
-        }
-        SDL_RenderTexture(renderer, tex, nullptr, &rect);
-        if (disabled) {
-          SDL_SetTextureColorMod(tex, 255, 255, 255);
-        }
-      } else {
-        DrawSliderArrow(platform,
-                        font_cache,
-                        rect,
-                        item.index == 6 || item.index == 25,
-                        disabled);
-      }
+      DrawSliderArrow(platform,
+                      font_cache,
+                      rect,
+                      item.index == 6 || item.index == 25,
+                      disabled);
       break;
     }
     case 0x08: // static value/label text
@@ -1088,7 +1086,8 @@ void DrawSettingsDialog(SdlPlatform &platform,
 } // namespace
 
 // Ghidra: 0x00488650 Menu_RunSettingsDialog
-// @port 0x00488650 95% ui
+// @port 0x00488650 95% ui,divergence
+// DIVERGENCE(original): dark menu theme and About Nova entry in settings.
 // The Run in a Window checkbox is live and drives
 // SdlPlatform::ApplyWindowMode (SDL_SetWindowFullscreen).
 // TODO(decomp): the original forced Share Processor gate remains unmodelled.
@@ -1109,11 +1108,10 @@ void DrawSettingsDialog(SdlPlatform &platform,
 //   brightness label=23/22, brightness value=24/23, brightness down/up=25/26
 //   /24/25.
 //
-// Port-only: a synthetic "Extra Prefs" push button (index
-// kExtraPrefsButtonIndex) is appended over the empty bottom band and opens
-// NovaMenu_RunExtraPrefsDialog. It has no original counterpart.
+// Extra Prefs, Narration and About use the expanded bottom band.
 bool NovaMenu_RunSettingsDialog(
     SdlPlatform &platform,
+    GameState &state,
     SdlAudio &audio,
     SdlMusic &music,
     NovaFontCache &font_cache,
@@ -1149,6 +1147,28 @@ bool NovaMenu_RunSettingsDialog(
     const auto hover = HitTestControl(layout, mouse.x, mouse.y);
     DrawSettingsDialog(
         platform, font_cache, layout, prefs, artwork, hover, render_background);
+    platform.PublishProbeUi(
+        "settings",
+        {{"extra_prefs",
+          platform.current_placement().ToWindowRect(
+              {layout.window.x + kExtraPrefsButtonRect.x,
+               layout.window.y + kExtraPrefsButtonRect.y,
+               kExtraPrefsButtonRect.w,
+               kExtraPrefsButtonRect.h})},
+         {"narration",
+          platform.current_placement().ToWindowRect(
+              {layout.window.x + kNarrationButtonRect.x,
+               layout.window.y + kNarrationButtonRect.y,
+               kNarrationButtonRect.w,
+               kNarrationButtonRect.h})},
+         {"about_nova",
+          platform.current_placement().ToWindowRect(kAboutButtonRect)},
+         {"key_settings",
+          platform.current_placement().ToWindowRect(
+              ItemRect(layout.items[15], layout.window))},
+         {"ok",
+          platform.current_placement().ToWindowRect(
+              ItemRect(layout.items.front(), layout.window))}});
     platform.Present();
 
     for (auto in = platform.PollTextEvent(); in;
@@ -1197,6 +1217,28 @@ bool NovaMenu_RunSettingsDialog(
                                    std::nullopt,
                                    render_background);
               });
+          break;
+        case kAboutButtonIndex:
+          NovaMenu_RunAboutDialog(platform, state, [&] {
+            DrawSettingsDialog(platform,
+                               font_cache,
+                               layout,
+                               prefs,
+                               artwork,
+                               std::nullopt,
+                               render_background);
+          });
+          break;
+        case kNarrationButtonIndex:
+          NovaNarration_RunVoiceSettings(platform, font_cache, [&] {
+            DrawSettingsDialog(platform,
+                               font_cache,
+                               layout,
+                               prefs,
+                               artwork,
+                               std::nullopt,
+                               render_background);
+          });
           break;
         case 5: // sound down
           prefs.sound_volume =

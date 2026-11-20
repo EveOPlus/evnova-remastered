@@ -19,6 +19,14 @@
 
 namespace NovaPaths {
 
+// Remake campaign selection applies on startup, with separate pilot folders.
+void InitializeCampaignSelection();
+[[nodiscard]] bool ArpiaCampaignActive();
+[[nodiscard]] bool ArpiaCampaignSelected();
+[[nodiscard]] bool ArpiaCampaignInstalled();
+[[nodiscard]] bool SelectArpiaCampaign(bool enabled);
+[[nodiscard]] std::optional<std::filesystem::path> CampaignPluginDirectory();
+
 // Shipped, read-only game root: the folder holding Nova.rez / Nova Files /
 // Nova Plug-ins. Candidates in order, first one that looks like an install
 // (has Nova.rez or a Nova Files directory) wins:

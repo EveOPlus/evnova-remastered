@@ -1,4 +1,5 @@
 #include "spaceflight_view.hpp"
+#include "radar_layout.hpp"
 
 #include "../brgr_archive.hpp"
 #include "../log.hpp"
@@ -455,14 +456,14 @@ void DrawQueuedBeam(SdlPlatform &platform,
                     const BeamHit &beam,
                     const Weapon &weapon) {
   const Viewport vp = CurrentViewport(platform);
-  const auto [camera_x, camera_y] = WorldCameraPosition(state);
+  const auto camera = WorldCameraPosition(state);
   const auto screen_x = [&](float world_x) {
     return static_cast<int>(
-        std::lround(world_x - camera_x + static_cast<float>(vp.w) / 2.0F));
+        std::lround(world_x - camera.first + static_cast<float>(vp.w) / 2.0F));
   };
   const auto screen_y = [&](float world_y) {
     return static_cast<int>(
-        std::lround(world_y - camera_y + static_cast<float>(vp.h) / 2.0F));
+        std::lround(world_y - camera.second + static_cast<float>(vp.h) / 2.0F));
   };
   const int xa = screen_x(beam.source_x);
   const int ya = screen_y(beam.source_y);
@@ -523,13 +524,14 @@ void LoadShipVisualLayer(SDL_Renderer *renderer,
                          const std::string &display_name,
                          int base_frame_count,
                          SpriteAsset &asset,
-                         bool &present) {
+                         bool &present,
+                         bool retain_detail_source = false) {
   present = image_id > 0;
   if (!present) {
     return;
   }
-  if (auto layer = SpriteAsset::LoadSheet(renderer,
-                                          static_cast<std::uint16_t>(image_id));
+  if (auto layer = SpriteAsset::LoadSheet(
+          renderer, static_cast<std::uint16_t>(image_id), retain_detail_source);
       layer) {
     asset = std::move(*layer);
     // The original's Sprite_CreateFromSpriteSheetResources call gives every
@@ -591,10 +593,8 @@ FlightSceneGeometry FlightSceneGeometryFor(const SdlPlatform &platform) {
   // Reserve exactly the drawn cockpit strip width. The stock strip is
   // 194x767; HudRenderer::Draw caps the UI scale the same way, so this tracks
   // the drawn strip at any scale (a one-frame lag on resize).
-  const float strip_scale = std::min(
-      platform.hud_scale(),
-      std::min(static_cast<float>(window_w) / kGameplayHudStripWidth,
-               static_cast<float>(window_h) / kGameplayHudStripHeight));
+  const float strip_scale =
+      RadarHudScale(sz, platform.hud_scale(), platform.remastered_graphics());
   const float reserve =
       static_cast<float>(std::lround(kGameplayHudStripWidth * strip_scale));
   const float scene_scale = platform.flight_scene_scale() > 0.0F
@@ -797,7 +797,7 @@ SpaceflightView::ShipSprites(SdlPlatform &platform,
     return nullptr;
   }
   auto base =
-      SpriteAsset::LoadSheet(platform.renderer(), visual->base_image_id);
+      SpriteAsset::LoadSheet(platform.renderer(), visual->base_image_id, true);
   if (!base) {
     ship_sprites_[ship_class_id] = std::move(entry);
     return nullptr;
@@ -821,7 +821,8 @@ SpaceflightView::ShipSprites(SdlPlatform &platform,
                         class_label,
                         entry.alt_set_count * entry.frames_per_rotation,
                         entry.alt,
-                        entry.has_alt);
+                        entry.has_alt,
+                        true);
   }
   LoadShipVisualLayer(platform.renderer(),
                       visual->engine_glow_image_id,
@@ -919,6 +920,26 @@ void SpaceflightView::DrawShipSprite(SdlPlatform &platform,
   const auto draw_layer = [&](const SpriteAsset &layer,
                               int layer_frame,
                               const SpriteDrawOptions &opts) {
+    SpriteDrawOptions draw_options = opts;
+    draw_options.linear_scale = platform.remastered_graphics();
+    if (platform.remastered_graphics() &&
+        (&layer == &sprite.base || &layer == &sprite.alt)) {
+      draw_options.detail_cache = &sprite_details_;
+    }
+    if (platform.remastered_graphics() && opts.additive && !cloak.hidden &&
+        &layer != &sprite.base && &layer != &sprite.alt) {
+      DrawRemasteredBloom(platform.renderer(),
+                          layer,
+                          layer_frame,
+                          hull_x,
+                          hull_y,
+                          camera_x,
+                          camera_y,
+                          viewport_w,
+                          viewport_h,
+                          opts,
+                          0.85F);
+    }
     DrawSprite(platform.renderer(),
                layer,
                layer_frame,
@@ -928,7 +949,7 @@ void SpaceflightView::DrawShipSprite(SdlPlatform &platform,
                camera_y,
                viewport_w,
                viewport_h,
-               opts);
+               draw_options);
   };
 
   // Hull draw state. The alt sheet copies all of it: brightness, paint and fog
@@ -1216,6 +1237,21 @@ void SpaceflightView::DrawBackground(SdlPlatform &platform,
   const std::uint8_t bg_b = static_cast<std::uint8_t>(c & 0xff);
   SDL_SetRenderDrawColor(renderer, bg_r, bg_g, bg_b, SDL_ALPHA_OPAQUE);
   SDL_RenderClear(renderer);
+
+  // Requested remaster is an independent presentation layer. The original
+  // particle pool still advances normally, retaining its random-stream cadence.
+  if (platform.remastered_graphics()) {
+    const Viewport vp = CurrentViewport(platform);
+    remastered_.DrawBackground(renderer,
+                               state.player.current_system_id,
+                               sys ? sys->murk : 0,
+                               state.player.pos_x,
+                               state.player.pos_y,
+                               vp.full_w,
+                               vp.h,
+                               c);
+    return;
+  }
 
   // Ambient star particles, wrapped around the current viewport (Ghidra
   // Frame_UpdateViewportWrapBackgroundSprites relocates an off-edge particle to
@@ -1549,20 +1585,12 @@ void SpaceflightView::WrapAsteroids(SdlPlatform &platform, GameState &state) {
     const float edge_y = center_y + static_cast<float>(max_span_y) + 32.0F;
     const float dx = m.target_pos_x - state.player.pos_x;
     const float dy = m.target_pos_y - state.player.pos_y;
-    if (dx > edge_x) {
-      m.target_pos_x =
-          state.player.pos_x - center_x - static_cast<float>(max_span_x) * 2.0F;
-    } else if (dx < -edge_x) {
-      m.target_pos_x =
-          state.player.pos_x + center_x + static_cast<float>(max_span_x) * 2.0F;
-    }
-    if (dy > edge_y) {
-      m.target_pos_y =
-          state.player.pos_y - center_y - static_cast<float>(max_span_y) * 2.0F;
-    } else if (dy < -edge_y) {
-      m.target_pos_y =
-          state.player.pos_y + center_y + static_cast<float>(max_span_y) * 2.0F;
-    }
+    // Wrap inside the same envelope we test. Placing the center beyond the
+    // opposite edge makes a contact flip sides every frame indefinitely.
+    if (std::abs(dx) > edge_x)
+      m.target_pos_x = state.player.pos_x + std::remainder(dx, edge_x * 2);
+    if (std::abs(dy) > edge_y)
+      m.target_pos_y = state.player.pos_y + std::remainder(dy, edge_y * 2);
   }
 }
 
@@ -1699,6 +1727,21 @@ void SpaceflightView::DrawStellarBodies(SdlPlatform &platform,
                      set->frame_count - 1);
       SpriteDrawOptions options;
       ApplyFog(options);
+      options.linear_scale = platform.remastered_graphics();
+      if (platform.remastered_graphics()) {
+        DrawRemasteredBloom(renderer,
+                            *set,
+                            frame_idx,
+                            static_cast<float>(st->pos_x),
+                            static_cast<float>(st->pos_y),
+                            camera_x,
+                            camera_y,
+                            vp.w,
+                            vp.h,
+                            options,
+                            0.38F);
+        options.detail_cache = &sprite_details_;
+      }
       DrawSprite(platform.renderer(),
                  *set,
                  frame_idx,
@@ -1830,6 +1873,20 @@ void SpaceflightView::DrawShots(SdlPlatform &platform,
       // additive tint path instead of ordinary alpha blending.
       opts.alpha_mod *= std::clamp(s.fade_alpha, 0.0F, 1.0F);
       opts.additive = s.fade_additive;
+      opts.linear_scale = platform.remastered_graphics();
+      if (platform.remastered_graphics()) {
+        DrawRemasteredBloom(renderer,
+                            *set,
+                            frame,
+                            s.pos_x,
+                            s.pos_y,
+                            camera_x,
+                            camera_y,
+                            vp.w,
+                            vp.h,
+                            opts,
+                            0.65F);
+      }
       DrawSprite(renderer,
                  *set,
                  frame,
@@ -1929,6 +1986,20 @@ void SpaceflightView::DrawImpactEffects(SdlPlatform &platform,
                                 0.0F,
                                 1.0F);
     ApplyFog(opts);
+    opts.linear_scale = platform.remastered_graphics();
+    if (platform.remastered_graphics()) {
+      DrawRemasteredBloom(platform.renderer(),
+                          *set,
+                          frame,
+                          instance.pos_x,
+                          instance.pos_y,
+                          camera_x,
+                          camera_y,
+                          vp.w,
+                          vp.h,
+                          opts,
+                          0.9F);
+    }
     DrawSprite(platform.renderer(),
                *set,
                frame,
@@ -2447,6 +2518,40 @@ std::int16_t SpaceflightView::PickShipAt(SdlPlatform &platform,
   return best;
 }
 
+std::int16_t SpaceflightView::PickAsteroidAt(SdlPlatform &platform,
+                                             const GameState &state,
+                                             float rx,
+                                             float ry) {
+  if (state.no_asteroids_latch)
+    return -1;
+  const auto vp = CurrentViewport(platform);
+  const auto [camera_x, camera_y] = WorldCameraPosition(state);
+  const float wx = rx - static_cast<float>(vp.w) / 2 + camera_x;
+  const float wy = ry - static_cast<float>(vp.h) / 2 + camera_y;
+  std::int16_t best = -1;
+  float nearest = std::numeric_limits<float>::max();
+  for (std::size_t i = 0; i < state.asteroid_pool.size(); ++i) {
+    const auto &asteroid = state.asteroid_pool[i];
+    if (!asteroid.active || asteroid.integrity <= -32000)
+      continue;
+    const auto *sprite = sprite_store_.Spin(
+        platform.renderer(),
+        static_cast<std::uint16_t>(kAsteroidSpinBase +
+                                   (asteroid.wander_type & 0x0f)));
+    if (!sprite || sprite->frames.empty())
+      continue;
+    const float distance =
+        std::hypot(wx - asteroid.target_pos_x, wy - asteroid.target_pos_y);
+    const float radius = std::max(
+        10.0F, std::max(sprite->tile_width, sprite->tile_height) * .5F);
+    if (distance <= radius && distance < nearest) {
+      best = static_cast<std::int16_t>(i);
+      nearest = distance;
+    }
+  }
+  return best;
+}
+
 std::int16_t SpaceflightView::PickStellarAt(SdlPlatform &platform,
                                             const GameState &state,
                                             float rx,
@@ -2536,21 +2641,15 @@ void SpaceflightView::DrawGameFrame(SdlPlatform &platform,
   // HUD overlays the world. The chrome scales with the port UI scale (capped
   // so the stock strip art fits the window) and is independent of `F`.
   hud.Draw(platform, state);
-  // Hyperspace flash: a full-screen frame at the jump moment (the original's
-  // centered effect 0x32 queued at engage, the 'boom' flash) plus the Mac
-  // progressive fade-in during the spin-up. White by default; the CE build
-  // forces black when `hyperspace_effects` is off (0x00872384). Drawn topmost
-  // so it also whites/blacks out the HUD, then fades as the loop decays
-  // screen_flash_intensity. A neutral full-window placement keeps it covering
-  // HUD and UI independent of the scene `F` scale.
+  // Dark hyperspace transition, including the jump/hypergate arrival pulse.
+  // Preserve the quick fade timing while never lighting the screen white.
   if (state.screen_flash_intensity > 0.0F) {
     platform.SetPlacement(PlaceWindow(platform.logical_playfield_size()));
     SDL_Renderer *const renderer = platform.renderer();
     const std::uint8_t a = static_cast<std::uint8_t>(
         std::clamp(state.screen_flash_intensity, 0.0F, 1.0F) * 255.0F);
-    const std::uint8_t v = state.screen_flash_black ? 0 : 255;
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(renderer, v, v, v, a);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, a);
     SDL_RenderFillRect(renderer, nullptr);
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
   }

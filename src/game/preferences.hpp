@@ -72,10 +72,9 @@ struct NovaPreferences {
 
   // Ghidra g_pref_share_processor_time.
   bool share_processor_time = true;
-  // Ghidra g_pref_quicktime_movies (inverted flag: 0 = QuickTime on). Locked
-  // to 1 ("off") by NovaPrefs_ApplyLockedPreferences: the port has no
-  // QuickTime movie playback, so a legacy .prf cannot enable it.
-  bool quicktime_movies = true;
+  // Ghidra g_pref_quicktime_movies (inverted: 0 = movies on).
+  // Prepared MPEG companions now play through the SDL movie modal.
+  bool quicktime_movies = false;
   // Ghidra g_pref_smoke_trails (inverted flag: 0 = smoke trails on).
   bool smoke_trails = false;
   // Ghidra DAT_00bec178 (run in a window), toggled live via the window mode.
@@ -121,8 +120,7 @@ struct NovaPreferences {
 // Forces the quality/graphics preferences the SDL port always renders. The
 // Settings dialog shows them disabled and a legacy .prf cannot turn them off;
 // call this after NovaPrefs_LoadFromFile (and it is applied by
-// ResetToDefaults). Locked: share_processor_time=true, quicktime_movies=true
-// (inverted: 1 = movies off; playback unsupported), smoke_trails=false,
+// ResetToDefaults). Locked: share_processor_time=true, smoke_trails=false,
 // ship_animations=true,
 // engine_glows=true, running_lights=true, weapon_effects=true,
 // parallax_starfield=true, check_for_updates=true, brightness=3.
@@ -131,17 +129,13 @@ struct NovaPreferences {
 // defaults ON with the Settings checkbox applying it live.
 void NovaPrefs_ApplyLockedPreferences(NovaPreferences &prefs);
 
-// @port 0x00872384 100%
+// @port 0x00872384 100% divergence
 // Ghidra 0x00872384 DrawContext_SetHyperspaceFlashColor.
-// Resolves the hyperspace flash colour the CE build applies at the jump and
-// hypergate arrival flashes: the raw g_hyperspace_effects byte non-zero forces
-// black, otherwise the requested white is applied. The stored byte is inverted
-// relative to the Settings checkbox, so the default (false) is effects-on
-// white. The port has no DrawContext; the spaceflight loop resolves this into
-// GameState.screen_flash_black and the view draws the full-screen overlay.
+// DIVERGENCE(original): always use the dark transition requested for the
+// remake. The original selected white or black from the effects preference.
 [[nodiscard]] constexpr bool
-NovaPrefs_HyperspaceFlashIsBlack(const NovaPreferences &prefs) {
-  return prefs.hyperspace_effects;
+NovaPrefs_HyperspaceFlashIsBlack(const NovaPreferences &) {
+  return true;
 }
 
 // @port 0x0046ab60 100%
@@ -183,8 +177,10 @@ NovaAudio_EffectGainFromPreference(std::int32_t sound_volume) {
 // edits the port-only presentation multipliers and bug-fix policy. The
 // original dialog has no such control; that button is the only extra-prefs
 // code left in this translation unit.
+struct GameState;
 bool NovaMenu_RunSettingsDialog(
     SdlPlatform &platform,
+    GameState &state,
     SdlAudio &audio,
     SdlMusic &music,
     NovaFontCache &font_cache,

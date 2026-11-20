@@ -1,4 +1,5 @@
 add_executable(evnova_tests
+    arpia_integration_test.cpp
     asteroid_scoop_test.cpp
     asteroid_test.cpp
     cargo_test.cpp
@@ -18,10 +19,13 @@ add_executable(evnova_tests
     geometry_util_test.cpp
     government_test.cpp
     hud_overlay_test.cpp
+    radar_layout_test.cpp
+    system_markets_test.cpp
     intro_cinematic_test.cpp
     impact_effects_test.cpp
     landed_window_test.cpp
     movement_test.cpp
+    mouse_controls_test.cpp
     negotiation_test.cpp
     mission_test.cpp
     mission_script_test.cpp
@@ -39,8 +43,11 @@ add_executable(evnova_tests
     preferences_test.cpp
     rank_test.cpp
     render_clip_scope_test.cpp
+    remastered_graphics_test.cpp
+    sprite_enhancement_test.cpp
     resource_fork_test.cpp
     route_map_test.cpp
+    starmap_route_test.cpp
     scenario_data_test.cpp
     selection_text_dialog_test.cpp
     services_buttons_test.cpp

@@ -16,8 +16,9 @@ and the binary behaves exactly as before. The implementation lives in
 ## Building
 
 The harness is a CMake option, `EVNOVA_ENABLE_PROBE`. It defaults to **ON**
-on POSIX hosts (where `probe_server.cpp`'s raw socket transport compiles) and
-**OFF** on Windows, whose Winsock backend is not written yet. When off,
+on POSIX hosts and **OFF** in ordinary Windows player builds. The Windows
+Winsock backend is available through `tools/build-windows.ps1 -TestDriver`;
+see `docs/windows_test_driver.md` for its headless client. When off,
 `probe_server_stub.cpp` provides the same `ProbeServer` surface as no-ops, so
 the game-side publish/consume call sites stay compiled and inert and the
 build stays portable. Configure explicitly with

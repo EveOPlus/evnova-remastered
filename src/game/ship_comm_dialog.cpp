@@ -23,6 +23,7 @@
 #include "landed_store.hpp"
 #include "landed_window.hpp"
 #include "mission.hpp"
+#include "mission_narration.hpp"
 #include "nova_font.hpp"
 #include "nova_random.hpp"
 #include "pict_texture.hpp"
@@ -418,7 +419,7 @@ void DrawShipCommDialog(SdlPlatform &platform,
   // over the unmodified gameplay surface.
   view.DrawGameFrame(platform, state, hud);
   platform.SetPlacement(PlaceContained({kCommFrameWidth, kCommFrameHeight},
-                                       platform.logical_playfield_size(),
+                                       platform.dialog_content_size(),
                                        platform.ui_scale()));
   (void)panel;
 
@@ -998,7 +999,7 @@ void DrawEscortManagementDialog(SdlPlatform &platform,
                                 const EscortManagementLayout &layout) {
   view.DrawGameFrame(platform, state, hud);
   platform.SetPlacement(PlaceContained({layout.window.w, layout.window.h},
-                                       platform.logical_playfield_size(),
+                                       platform.dialog_content_size(),
                                        platform.ui_scale()));
   SDL_Renderer *renderer = platform.renderer();
   constexpr float kScreenFontSize = 9.0F;
@@ -1512,7 +1513,7 @@ bool NovaShipComm_RunShipDialog(SdlPlatform &platform,
   NovaFontCache font_cache;
   const SDL_FRect panel{0.0F, 0.0F, 640.0F, 480.0F};
   platform.SetPlacement(PlaceContained({layout.window.w, layout.window.h},
-                                       platform.logical_playfield_size(),
+                                       platform.dialog_content_size(),
                                        platform.ui_scale()));
 
   // Item-11 info block contents (0x0047e470 + 0x0047fb70): the class's Bible
@@ -1773,7 +1774,10 @@ bool NovaShipComm_RunShipDialog(SdlPlatform &platform,
   };
 
   // ---- Modal loop ----------------------------------------------------------
+  MissionNarrationScope narration(platform);
+  ProbeUiAutoClear probe_ui_guard(platform);
   while (!platform.quit_requested()) {
+    narration.SetText(status);
     DrawShipCommDialog(platform,
                        state,
                        view,
@@ -1792,6 +1796,9 @@ bool NovaShipComm_RunShipDialog(SdlPlatform &platform,
                        button_labels,
                        layout,
                        panel);
+    platform.PublishProbeUi(
+        "ship_comm",
+        {{"window", platform.current_placement().ToWindowRect(panel)}});
     platform.Present();
 
     bool close_channel = false;

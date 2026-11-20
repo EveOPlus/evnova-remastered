@@ -181,8 +181,8 @@ void NovaUi_DrawScrollArrow(SdlPlatform &platform,
 // NovaUi_DrawSelectionDialogContent 0x00499870). A variant < 0x80 keeps the
 // 0xbbb strip. Callers that only have a bare string pass 0. The auto-size arm
 // is disabled in the art arm, as in the original.
-// TODO(decomp) skipped: the desc status-string movie (Ui_PlayMovieFileModal
-// 0x0049db00, recorded as a `qt` platform skip in decomp-skipped.tsv) and
+// The desc status-string movie uses the SDL player with a prepared MPEG
+// companion file. TODO(decomp) skipped: the
 // g_selection_dialog_over_static_surface redraw variants.
 //
 // `mission_dialog` selects the requested presentation scale: mission desc
@@ -197,6 +197,7 @@ void NovaUi_RunTextReaderDialog(
     bool allow_starmap,
     const std::function<void()> &render_background = {},
     std::int16_t dialog_variant = 0,
-    bool mission_dialog = false);
+    bool mission_dialog = false,
+    const std::string &movie = {});
 
 } // namespace game

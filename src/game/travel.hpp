@@ -368,7 +368,7 @@ bool NovaTravel_PlotStarmapDestination(GameState &state,
 // ---------------------------------------------------------------------------
 // Plotted starmap route (Ghidra DAT_00735404 = state.travel.starmap_route).
 //
-// Shift-clicking systems in the galaxy map extends/truncates a multi-hop route
+// Shift-click now plans the shortest known multi-hop route (starmap_route.hpp)
 // anchored at the current system; the drawn chain is green. The route persists
 // across map sessions and advances hop-by-hop as the player jumps.
 // ---------------------------------------------------------------------------
@@ -390,15 +390,15 @@ void NovaStarmap_SyncTravelSelectionFromRoute(GameState &state);
 // True when the route has at least one plotted hop (Ghidra DAT_007dc744).
 [[nodiscard]] bool NovaStarmap_RouteHasHops(const GameState &state);
 
-// Edits the plotted route at the twin-resolved clicked system (the starmap's
-// shift-click path, Ghidra 0x004a47cc): reset when the hit is on the current
-// system's discovery slot, truncate when it slot-matches a plotted hop (that
-// hop and everything after are cleared, then the hit is re-appended, so the
-// route ends AT the clicked hop), pop the tail when it is a twin of it, and
-// otherwise append when the tail is visited (or the hit latched) and the hit
-// is a travel-resolvable adjacency of the tail. Returns true only when the
-// click appended a hop (the original moves the map selection in that case
-// alone).
+// Original manual route editor retained as reconstructed logic (Ghidra
+// 0x004a47cc); the modern map uses automatic routing instead. Reset when the
+// hit is on the current system's discovery slot, truncate when it slot-matches
+// a plotted hop (that hop and everything after are cleared, then the hit is
+// re-appended, so the route ends AT the clicked hop), pop the tail when it is a
+// twin of it, and otherwise append when the tail is visited (or the hit
+// latched) and the hit is a travel-resolvable adjacency of the tail. Returns
+// true only when the click appended a hop (the original moves the map selection
+// in that case alone).
 bool NovaStarmap_EditRouteAtHop(GameState &state, std::int16_t hit);
 
 // Resets the route to just the current system (the Clear Route button,

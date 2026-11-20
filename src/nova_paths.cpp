@@ -5,6 +5,7 @@
 #include <SDL3/SDL_filesystem.h>
 
 #include <filesystem>
+#include <fstream>
 #include <optional>
 #include <system_error>
 #include <vector>
@@ -86,6 +87,9 @@ bool g_install_root_cached_valid = false;
 std::optional<std::filesystem::path> g_support_directory_override;
 std::optional<std::filesystem::path> g_support_directory_cached;
 bool g_support_directory_cached_valid = false;
+std::optional<std::filesystem::path> g_campaign_settings_root;
+bool g_arpia_active = false;
+bool g_arpia_selected = false;
 
 [[nodiscard]] std::optional<std::filesystem::path>
 NormalizeResolvedRoot(const std::filesystem::path &path) {
@@ -108,6 +112,67 @@ std::optional<std::filesystem::path> NovaPaths::InstallRoot() {
     g_install_root_cached_valid = true;
   }
   return g_install_root_cached;
+}
+
+void NovaPaths::InitializeCampaignSelection() {
+  g_campaign_settings_root = SupportDirectory();
+  if (!g_campaign_settings_root)
+    return;
+  int enabled = 0;
+  std::ifstream(*g_campaign_settings_root / "ARPIA2 enabled.txt") >> enabled;
+  g_arpia_selected = enabled != 0;
+  g_arpia_active = g_arpia_selected && ArpiaCampaignInstalled();
+  if (!g_arpia_active)
+    return;
+  const auto campaign = *g_campaign_settings_root / "ARPIA2";
+  std::error_code ec;
+  std::filesystem::create_directories(campaign, ec);
+  if (ec) {
+    NovaLog::Error("could not create ARPIA2 profile: {}", ec.message());
+    g_arpia_active = false;
+    return;
+  }
+  for (const auto *name : {"EV Nova Extra Prefs.ini"}) {
+    std::filesystem::copy_file(*g_campaign_settings_root / name,
+                               campaign / name,
+                               std::filesystem::copy_options::skip_existing,
+                               ec);
+  }
+  SetSupportDirectoryOverride(campaign);
+  NovaLog::Info("ARPIA2 expansion enabled; separate profile '{}'.",
+                campaign.string());
+}
+
+bool NovaPaths::ArpiaCampaignActive() { return g_arpia_active; }
+
+bool NovaPaths::ArpiaCampaignSelected() { return g_arpia_selected; }
+
+bool NovaPaths::ArpiaCampaignInstalled() {
+  const auto root = InstallRoot();
+  return root &&
+         std::filesystem::exists(*root / "Campaigns/ARPIA2/installed.txt");
+}
+
+bool NovaPaths::SelectArpiaCampaign(bool enabled) {
+  if (!g_campaign_settings_root || (enabled && !ArpiaCampaignInstalled()))
+    return false;
+  std::ofstream file(*g_campaign_settings_root / "ARPIA2 enabled.txt");
+  file << (enabled ? 1 : 0);
+  file.flush();
+  if (!file) {
+    NovaLog::Error("could not save the ARPIA2 campaign selection");
+    return false;
+  }
+  g_arpia_selected = enabled;
+  return true;
+}
+
+std::optional<std::filesystem::path> NovaPaths::CampaignPluginDirectory() {
+  if (g_arpia_active) {
+    if (const auto root = InstallRoot())
+      return *root / "Campaigns/ARPIA2";
+  }
+  return std::nullopt;
 }
 
 void NovaPaths::SetInstallRootOverride(

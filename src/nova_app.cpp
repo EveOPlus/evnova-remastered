@@ -12,10 +12,13 @@
 #include "game/pilot_file.hpp"
 #include "game/player_info_window.hpp"
 #include "game/preferences_extra.hpp"
+#include "game/preferences_ui.hpp"
 #include "game/probe_state.hpp"
+#include "game/selection_text_dialog.hpp"
 #include "game/ship_ai.hpp"
 #include "game/ship_spawn.hpp"
 #include "game/spaceflight.hpp"
+#include "game/spaceflight_view.hpp"
 #include "game/targeting.hpp"
 #include "game/travel.hpp"
 #include "game/ui_dialog.hpp"
@@ -49,8 +52,46 @@ constexpr std::array kMenuEntries{
     MenuEntry{GameModeAction::quit, "QUIT NOVA"},
     MenuEntry{GameModeAction::enter_spaceflight, "ENTER SHIP"},
     MenuEntry{GameModeAction::preferences, "SET PREFS"},
-    MenuEntry{GameModeAction::about_nova, "ABOUT NOVA"},
+    MenuEntry{GameModeAction::save_pilot, "SAVE PILOT"},
 };
+
+bool CanSavePilot(const NovaRuntime &runtime) {
+  return runtime.game.game_active && runtime.game.player.is_active &&
+         runtime.game.player.death_timer_active < 0.0F &&
+         !runtime.game.pilot.first_name.empty();
+}
+
+void SavePilotSelection(NovaRuntime &runtime, std::filesystem::path path) {
+  if (!CanSavePilot(runtime))
+    return;
+  if (!path.has_extension()) {
+    path += ".plt";
+    // Native overwrite confirmation covered the typed path, not the name
+    // after adding its extension.
+    std::error_code ec;
+    if (std::filesystem::exists(path, ec) &&
+        !game::NovaUi_ShowConfirmDialog(
+            runtime.platform,
+            runtime.font_cache,
+            "Replace the existing pilot file?\n\n" + path.string(),
+            [&runtime] { NovaRender_RedrawAndPresentFrame(runtime, 0); }))
+      return;
+  }
+  const auto restore_stellar =
+      game::NovaTargeting_FindNearestAvailableTravelStellar(runtime.game);
+  const bool saved = game::PilotFileSaveGameToPath(
+      path,
+      runtime.game,
+      game::PilotFileStellarIndexFromResourceId(restore_stellar));
+  game::NovaUi_RunTextReaderDialog(
+      runtime.platform,
+      runtime.game,
+      saved ? "Pilot saved.\n\n" + path.string()
+            : "Could not save your pilot. Check that the chosen folder is "
+              "writable and there is enough free disk space.",
+      false,
+      [&runtime] { NovaRender_RedrawAndPresentFrame(runtime, 0); });
+}
 
 constexpr std::uint64_t kLoadingSplashDurationMs = 850;
 constexpr std::uint64_t kStartupSplashDurationMs = 1'850;
@@ -138,6 +179,69 @@ LoadMenuSpriteAsset(SDL_Renderer *renderer,
   return asset;
 }
 
+void PrepareSavePilotArt(NovaRuntime &runtime) {
+  auto &asset = runtime.main_menu_sprite_assets[5];
+  if (!asset || asset->sheet.width != 98 || asset->sheet.height != 60)
+    return;
+  constexpr std::array<SDL_Rect, 2> labels{
+      {{19, 13, 72, 17}, {16, 34, 65, 18}}};
+  for (std::size_t frame_id = 0; frame_id < asset->sheet.frames.size();
+       ++frame_id) {
+    auto &pixels = asset->sheet.frames[frame_id].rgba_pixels;
+    const auto original = pixels;
+    const int width = asset->sheet.width;
+    const auto at = [width](int x, int y) {
+      return static_cast<std::size_t>((y * width + x) * 4);
+    };
+    // Remove just the pale baked lettering and its one-pixel shadow. Nearby
+    // red pixels provide the original face's colour at each scan line.
+    for (const auto &rect : labels) {
+      for (int y = rect.y; y < rect.y + rect.h; ++y) {
+        for (int x = rect.x; x < rect.x + rect.w; ++x) {
+          bool letter = false;
+          for (int dy = -1; dy <= 1; ++dy) {
+            for (int dx = -1; dx <= 1; ++dx) {
+              const auto p = at(x + dx, y + dy);
+              if (original[p] > 55 && original[p + 1] > 55 &&
+                  std::abs(static_cast<int>(original[p]) - original[p + 1]) <
+                      30)
+                letter = true;
+            }
+          }
+          if (!letter)
+            continue;
+          int left = x;
+          int right = x;
+          const auto red_face = [&](int cx) {
+            const auto p = at(cx, y);
+            return original[p + 3] != 0 && original[p] > original[p + 1] + 12 &&
+                   original[p] > original[p + 2] + 12;
+          };
+          while (left > rect.x - 2 && !red_face(left))
+            --left;
+          while (right < rect.x + rect.w && !red_face(right))
+            ++right;
+          const auto dst = at(x, y);
+          for (int c = 0; c < 3; ++c) {
+            pixels[dst + static_cast<std::size_t>(c)] =
+                static_cast<std::uint8_t>(
+                    (original[at(left, y) + c] + original[at(right, y) + c]) /
+                    2);
+          }
+        }
+      }
+    }
+    if (auto texture = SdlTexture::Create(runtime.platform.renderer(),
+                                          asset->sheet.width,
+                                          asset->sheet.height,
+                                          pixels)) {
+      asset->textures[frame_id] = std::move(texture);
+    } else {
+      NovaLog::Warn("could not prepare Save Pilot button frame {}", frame_id);
+    }
+  }
+}
+
 // Slices a vertically stacked PICT sprite resource into SDL textures. The
 // title animation (606) and row reveals (608-610) all use this layout.
 [[nodiscard]] std::vector<std::unique_ptr<SdlTexture>>
@@ -215,11 +319,13 @@ void PublishMainMenuProbeUi(NovaRuntime &runtime) {
       "quit_nova",
       "enter_ship",
       "set_prefs",
-      "about_nova"};
+      "save_pilot"};
   const auto &placement = runtime.platform.current_placement();
   std::vector<std::pair<std::string, SDL_FRect>> named;
   for (std::size_t index = 0; index < kMenuEntries.size(); ++index) {
-    if (!MenuRowRevealed(runtime, index % 3)) {
+    if (!MenuRowRevealed(runtime, index % 3) ||
+        (kMenuEntries[index].action == GameModeAction::save_pilot &&
+         !CanSavePilot(runtime))) {
       continue;
     }
     const SDL_FRect rect = MenuRect(runtime, index);
@@ -410,6 +516,7 @@ void RunStartupLoadStep(NovaRuntime &runtime, std::uint8_t step) {
         NovaLog::Todo("main-menu sp\\x95n {} could not be loaded", sprite_id);
       }
     }
+    PrepareSavePilotArt(runtime);
     break;
   case StartupLoadStep::backdrop:
     if (const auto backdrop_data = NovaResource_LoadMainMenuBackdropData()) {
@@ -1045,6 +1152,15 @@ int NovaProgramEntry() {
 // @port 0x004D2A80 100%
 // Ghidra: 0x004d2a80 NovaApp_Run: app entry / main menu loop.
 int NovaApp_Run(NovaRuntime &runtime) {
+#if EVNOVA_ENABLE_PROBE
+  if (std::getenv("EVN_PROBE") != nullptr) {
+    if (const char *profile = std::getenv("EVN_PROBE_PROFILE");
+        profile && *profile) {
+      NovaPaths::SetSupportDirectoryOverride(std::filesystem::path{profile});
+    }
+  }
+#endif
+  NovaPaths::InitializeCampaignSelection();
   // Preferences select the startup window mode, so load both stores before the
   // SDL window exists (neither path needs SDL video).
   if (!game::NovaPrefs_LoadFromSystemStore(runtime.prefs)) {
@@ -1075,10 +1191,50 @@ int NovaApp_Run(NovaRuntime &runtime) {
   runtime.game.starmap_show_borders = runtime.prefs.starmap_show_borders;
   // External probe harness (docs/probe_harness.md): the state reader runs on
   // the main thread at the pump, so it can safely walk the live GameState.
-  runtime.platform.probe().SetStateProvider(
-      [&runtime](const std::string &query) {
-        return ProbeState_Snapshot(runtime.game, query);
-      });
+  runtime.platform.probe().SetStateProvider([&runtime](
+                                                const std::string &query) {
+    if (query == "narration")
+      return runtime.platform.narrator().Snapshot();
+    if (query == "campaign")
+      return fmt::format(
+          "{{\"arpia2_active\":{},\"arpia2_selected\":{},\"installed\":{}}}",
+          NovaPaths::ArpiaCampaignActive(),
+          NovaPaths::ArpiaCampaignSelected(),
+          NovaPaths::ArpiaCampaignInstalled());
+    if (query == "view") {
+      const auto radar = runtime.platform.radar_bounds();
+      const auto size = runtime.platform.logical_playfield_size();
+      const auto geometry = game::FlightSceneGeometryFor(runtime.platform);
+      const auto center = geometry.placement.ToWindow(
+          {geometry.viewport_w * 0.5F, geometry.viewport_h * 0.5F});
+      return fmt::format(
+          "{{\"window_width\":{},\"window_height\":{},\"fullscreen\":{},"
+          "\"world_width\":{},\"world_height\":{},\"zoom\":{},\"ui_scale\":"
+          "{},\"remastered_graphics\":{},\"player_screen_x\":{},\"player_"
+          "screen_y\":{},\"radar_zoom\":{},\"radar_x\":{},\"radar_y\":{},"
+          "\"radar_width\":{},\"radar_height\":{},\"map_zoom\":{},"
+          "\"navigation_panel\":{},\"navigation_zoom\":{}}}",
+          size.x,
+          size.y,
+          !runtime.platform.IsWindowed(),
+          geometry.viewport_w,
+          geometry.viewport_h,
+          runtime.platform.flight_scene_scale(),
+          runtime.platform.ui_scale(),
+          runtime.platform.remastered_graphics(),
+          center.x,
+          center.y,
+          runtime.platform.presentation_scale().radar,
+          radar.x,
+          radar.y,
+          radar.w,
+          radar.h,
+          runtime.game.starmap_zoom,
+          runtime.game.navigation_panel.visible,
+          runtime.game.navigation_panel.zoom);
+    }
+    return ProbeState_Snapshot(runtime.game, query);
+  });
   runtime.platform.SetProbeAudioSuppressionHandler([&runtime](bool suppressed) {
     runtime.audio.SetPlaybackSuppressed(suppressed, [&runtime] {
       return runtime.platform.gameplay_ticks_ms();
@@ -1099,6 +1255,8 @@ int NovaApp_Run(NovaRuntime &runtime) {
   // two mission dialogs.
   const game::PresentationScale presentation = extra_prefs.scale;
   runtime.platform.SetPresentationScale(presentation);
+  runtime.platform.SetRemasteredGraphics(extra_prefs.remastered_graphics);
+  runtime.platform.SetMoviesEnabled(!runtime.prefs.quicktime_movies);
   NovaLog::Info("presentation scale: ui={:.3g} flight={:.3g} mission={:.3g}",
                 presentation.ui,
                 presentation.flight_scene,
@@ -1258,6 +1416,11 @@ void NovaGameSession_Run(NovaRuntime &runtime) {
   }
 
   NovaMainLoop_Run(runtime);
+  // Persist the remake's live wheel zoom and F11 mode through the existing
+  // presentation store; no original pilot fields are changed.
+  runtime.extra_prefs.scale = runtime.platform.presentation_scale();
+  runtime.extra_prefs.run_in_window = runtime.platform.IsWindowed();
+  (void)game::NovaExtraPrefs_SaveToSystemStore(runtime.extra_prefs);
 }
 
 // Ghidra: 0x00486880 NovaMainLoop_Run
@@ -1279,7 +1442,16 @@ void NovaMainLoop_UpdateFrame(NovaRuntime &runtime) {
 
   if (auto selection = runtime.platform.PollOpenFileDialogResult()) {
     if (!selection->error.empty()) {
-      NovaLog::Error("Open Pilot file dialog failed: {}", selection->error);
+      NovaLog::Error("Pilot file dialog failed: {}", selection->error);
+      game::NovaUi_RunTextReaderDialog(
+          runtime.platform,
+          runtime.game,
+          "Could not open the file dialog. Please try again.",
+          false,
+          [&runtime] { NovaRender_RedrawAndPresentFrame(runtime, 0); });
+    } else if (selection->mode == SdlPlatform::PilotFileDialogMode::save) {
+      if (selection->path)
+        SavePilotSelection(runtime, *selection->path);
     } else if (selection->path) {
       game::NovaShip_ResetPlayerShipState(runtime.game);
       // Ghidra 0x004c9e90: Game_ResetReputationAndAvailability(1) follows the
@@ -1474,11 +1646,11 @@ void NovaMainLoop_UpdateFrame(NovaRuntime &runtime) {
   }
 }
 
-// Ghidra: 0x004873b0 NovaRender_RedrawAndPresentFrame
+// @port 0x004873b0 100% divergence
+// Ghidra: 0x004873b0 NovaRender_RedrawAndPresentFrame.
+// DIVERGENCE(original): relabel the original About control as Save Pilot.
 // @port 0x0048c3c0 60% rendering
-// TODO(decomp): the jitter-scroll and decay-counter motion is approximated by
-// the reveal counters.
-// @port 0x004873b0 100%
+// TODO(decomp): jitter-scroll and decay-counter motion use reveal counters.
 void NovaRender_RedrawAndPresentFrame(NovaRuntime &runtime, short mode) {
   SDL_Renderer *const renderer = runtime.platform.renderer();
   // Main-menu art is authored for the 1024x768 canvas and is contained at the
@@ -1586,6 +1758,34 @@ void NovaRender_RedrawAndPresentFrame(NovaRuntime &runtime, short mode) {
     const auto destination = MenuRect(runtime, index);
     SDL_RenderTexture(
         renderer, asset.textures[frame_index]->get(), nullptr, &destination);
+    if (index == 5) {
+      const bool enabled = CanSavePilot(runtime);
+      for (int row = 0; row < 2; ++row) {
+        const auto label = row == 0 ? "SAVE" : "PILOT";
+        const float baseline = destination.y + (row == 0 ? 28.0F : 49.0F);
+        game::NovaText_DrawCentered(runtime.platform,
+                                    runtime.font_cache,
+                                    game::NovaFontFamily::kGeneva,
+                                    14.0F,
+                                    game::kNovaFontStyleBold,
+                                    SDL_Color{0, 0, 0, 255},
+                                    destination.x + 14,
+                                    destination.x + 88,
+                                    baseline + 1,
+                                    label);
+        game::NovaText_DrawCentered(runtime.platform,
+                                    runtime.font_cache,
+                                    game::NovaFontFamily::kGeneva,
+                                    14.0F,
+                                    game::kNovaFontStyleBold,
+                                    enabled ? SDL_Color{207, 207, 207, 255}
+                                            : SDL_Color{105, 105, 105, 255},
+                                    destination.x + 13,
+                                    destination.x + 87,
+                                    baseline,
+                                    label);
+      }
+    }
   }
 
   // Center preview (sp\x95n 607): frames 0-5 correspond to the menu actions,
@@ -1844,10 +2044,23 @@ void NovaGameMode_DispatchAction(NovaRuntime &runtime, GameModeAction action) {
     break;
   }
   case GameModeAction::open_pilot:
-    if (!runtime.platform.ShowOpenPilotFileDialog()) {
+    if (!runtime.platform.ShowOpenPilotFileDialog(
+            game::PilotFileSaveDirectory().value_or(std::filesystem::path{}))) {
       NovaLog::Info("Open Pilot file dialog is already active");
     }
     break;
+  case GameModeAction::save_pilot: {
+    if (!CanSavePilot(runtime)) {
+      break;
+    }
+    const auto directory = game::PilotFileSaveDirectory();
+    const auto default_file = directory.value_or(std::filesystem::path{}) /
+                              (runtime.game.pilot.first_name + ".plt");
+    if (!runtime.platform.ShowSavePilotFileDialog(default_file)) {
+      NovaLog::Info("Save Pilot file dialog is already active");
+    }
+    break;
+  }
   case GameModeAction::quit:
     runtime.quit_requested = true;
     break;
@@ -1875,6 +2088,9 @@ void NovaGameMode_DispatchAction(NovaRuntime &runtime, GameModeAction action) {
     break;
   }
   case GameModeAction::preferences: {
+    runtime.prefs.run_in_window = runtime.platform.IsWindowed();
+    runtime.extra_prefs.run_in_window = runtime.prefs.run_in_window;
+    runtime.extra_prefs.scale = runtime.platform.presentation_scale();
     // Blocking Settings modal (Ghidra Menu_RunSettingsDialog 0x00488650, DLOG
     // 0xfa3). Edits runtime.prefs in place; OK commits the .prf (deferred) and
     // Esc/Cancel discards. Returns to the main menu either way.
@@ -1884,6 +2100,7 @@ void NovaGameMode_DispatchAction(NovaRuntime &runtime, GameModeAction action) {
     runtime.prefs.starmap_show_borders = runtime.game.starmap_show_borders;
     const bool saved = game::NovaMenu_RunSettingsDialog(
         runtime.platform,
+        runtime.game,
         runtime.audio,
         runtime.music,
         font_cache,
@@ -1894,6 +2111,7 @@ void NovaGameMode_DispatchAction(NovaRuntime &runtime, GameModeAction action) {
     // The Extra Prefs dialog may have edited the bug-fix policy; keep the
     // live GameState copy in sync with the persisted NovaExtraPrefs copy.
     runtime.game.bugfixes = runtime.extra_prefs.bugfixes;
+    runtime.platform.SetMoviesEnabled(!runtime.prefs.quicktime_movies);
     // Force a redraw so the menu backdrop (and any brightness change) is seen.
     NovaRender_RedrawAndPresentFrame(runtime, 1);
     break;
@@ -1934,6 +2152,8 @@ std::optional<GameModeAction> NovaCommand_DispatchToMode(char command) {
     return GameModeAction::new_game;
   case 'o':
     return GameModeAction::open_pilot;
+  case 's':
+    return GameModeAction::save_pilot;
   case 'e':
     return GameModeAction::enter_spaceflight;
   case 'p':
@@ -1957,7 +2177,9 @@ std::optional<GameModeAction>
 NovaHud_TrackFocusHoverIndex(const NovaRuntime &runtime) {
   const auto mouse_position = runtime.platform.mouse_position();
   for (std::size_t index = 0; index < kMenuEntries.size(); ++index) {
-    if (!MenuRowRevealed(runtime, index % 3)) {
+    if (!MenuRowRevealed(runtime, index % 3) ||
+        (kMenuEntries[index].action == GameModeAction::save_pilot &&
+         !CanSavePilot(runtime))) {
       continue;
     }
     if (runtime.main_menu_sprite_assets[index]

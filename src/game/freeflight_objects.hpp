@@ -35,7 +35,8 @@ void NovaFreeflight_SpawnAtPosition(GameState &state,
                                     float pos_x,
                                     float pos_y,
                                     std::int16_t extra,
-                                    std::int16_t sprite_set_index);
+                                    std::int16_t sprite_set_index,
+                                    std::uint64_t mining_group = 0);
 
 // Ghidra 0x0042c1b0 Frame_UpdateFreeflightObjectSprites: integrate position,
 // advance the spin/frame counter and expire lifetimes. `elapsed_ticks` is in

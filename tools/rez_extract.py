@@ -10,7 +10,7 @@ The container model is mirror-marched against the C++ reconstruction in
 Container layout (little-endian):
   [0x00] b'BRGR' magic
   [0x08] descriptor-blob size (u32)
-  [0x0c] blob: [u32 1][u32 1][u32 entry_count]
+  [0x0c] blob: [u32 group_count][u32 first_entry_id][u32 entry_count]
          then entry_count * 12-byte entries: [u32 offset][u32 size][u32 name]
          (a third field is the entry's name; resource.map is always one of these
          region entries).
@@ -24,7 +24,7 @@ header, always the final entry):
       records_offset is relative to the map region's base offset in the file.
   records (0x10a bytes each) at map_base + records_offset + n*0x10a:
       [u32 index][u32 type_code][u16 res_id][name...  (NUL-terminated C string)]
-  A record's `index` is 1-based into the container entry table, so the payload
+  A record's `index` is relative to the group's first entry id, so the payload
   is the corresponding (offset, size) region.
 
 A genuine resource.map region must satisfy for *every* type entry: record_count
@@ -100,6 +100,7 @@ class Archive:
         if len(blob) < 16:
             raise ValueError("truncated descriptor blob")
         self.entry_count = le(blob, 8, 4)
+        self.first_entry_id = le(blob, 4, 4)
         self.entries = []          # list of (offset, size)
         self.map_entry = -1        # index into self.entries of resource.map
         entries_begin = 0x0c + 12
@@ -154,10 +155,10 @@ class Archive:
 
     # ---- payload/region lookup -----------------------------------------------
     def resource_region(self, idx):
-        """Return the file offset+size for a 1-based resource record index."""
-        if idx < 1 or idx - 1 >= len(self.entries):
+        """Return the file offset+size for a group-relative resource record id."""
+        if idx < self.first_entry_id or idx - self.first_entry_id >= len(self.entries):
             return None
-        return self.entries[idx - 1]
+        return self.entries[idx - self.first_entry_id]
 
     def payload(self, idx):
         reg = self.resource_region(idx)

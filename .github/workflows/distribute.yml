@@ -1,12 +1,7 @@
 name: Distribute nightly
 
 on:
-  workflow_run:
-    # During rollout, distribute successful main builds. Move this trigger to
-    # published releases when nightly notarization is no longer wanted.
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
+  # Enable manually after this fork has its own Apple signing credentials.
   workflow_dispatch:
     inputs:
       ci_run_id:

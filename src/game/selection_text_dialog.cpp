@@ -1,4 +1,5 @@
 #include "selection_text_dialog.hpp"
+#include "movie_player.hpp"
 
 #include "../brgr_archive.hpp"
 #include "../log.hpp"
@@ -391,8 +392,7 @@ LoadBackdropPict(SdlPlatform &platform, std::uint16_t pict_id) {
 } // namespace
 
 // @port 0x004982a0 88% ui
-// TODO(decomp): desc status-string display (Ui_PlayMovieFileModal, a QuickTime
-// platform replacement), save/restore player
+// TODO(decomp): save/restore player
 // ai_secondary_target_slot/travel_transfer_mode around the map,
 // over-static-surface redraw variants, pressed-button flash during click
 // tracking. Background re-renders the live docked menu / flight view per frame
@@ -422,7 +422,13 @@ void NovaUi_RunTextReaderDialog(SdlPlatform &platform,
                                 bool allow_starmap,
                                 const std::function<void()> &render_background,
                                 std::int16_t dialog_variant,
-                                bool mission_dialog) {
+                                bool mission_dialog,
+                                const std::string &movie) {
+  (void)NovaMovie_Play(platform, movie);
+  if (text.empty())
+    return;
+  MissionNarrationScope narration(platform, mission_dialog);
+  narration.SetText(text);
   const SdlPlatform::ScopedPlacement restore_placement(
       platform, platform.current_placement());
   // Mission desc readers compose `U * M`; all other readers use `U`.
@@ -495,7 +501,7 @@ void NovaUi_RunTextReaderDialog(SdlPlatform &platform,
       SDL_RenderClear(platform.renderer());
     }
     platform.SetPlacement(PlaceContained(
-        authored_size, platform.logical_playfield_size(), requested_scale));
+        authored_size, platform.dialog_content_size(), requested_scale));
     const Placement &placement = platform.current_placement();
     platform.PublishProbeUi(
         "text_reader",

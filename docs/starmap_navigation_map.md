@@ -5,6 +5,49 @@
 The in-flight galaxy navigation window. It is the primary non-HUD binding
 between the world map (`syst` records) and the jump/travel system.
 
+## Remake automatic routing
+
+The map also offers **Pop out**, opening a non-modal in-game Navigation panel.
+It shares the map projection, discovery gates, marker assets and route planner.
+It displays only the chart and a thin border: drag blank space to move the
+panel, Shift-drag to pan, wheel to zoom, and right-click to close. Shift-click
+plots the shortest known route. J jumps once; double-J follows the route. The
+panel stays visible and recenters after each system arrival. Mouse gestures
+inside it are consumed before spaceflight steering and radar/world zoom.
+Window fitting clamps the whole panel on screen; it is session presentation
+state and does not modify pilot files. Hypergate-only maps omit Pop out.
+
+Shift-click a system to replace the plotted route with the fewest known
+directed jumps from the current system. The new `starmap_route.cpp` planner
+uses breadth-first search, resolves story-dependent system twins, and only
+expands visited systems' links (the current system is always allowed).
+An unexplored frontier system can be the final destination, but cannot expose
+unknown onward links. Distance on the map does not affect the jump count.
+
+A successful route uses the existing green line renderer and arms its first
+jump. Press J once to jump one leg, or twice within 450 ms to follow the entire
+route: the input controller flies clear of each system and issues normal jump
+commands until arrival. The second press can join the first jump in progress;
+holding J does not count twice. While following a route, press J again,
+steer, change navigation, or open the map to cancel. If a jump is already in
+progress, cancellation stops further legs after that jump finishes.
+Low fuel, a disabled ship, or an invalidated link stops automation and retains
+the remaining plan; refuel and double-press J to resume. It does not dock or refuel
+automatically. Arrival consumes each leg and arms the next one.
+Failure leaves the previous route and jump selection intact and displays a
+notice. Shift-clicking the current system, or Clear Route, clears the plan.
+Hypergate destination selection retains its original behavior.
+
+This intentionally replaces the original Shift-click manual append/truncate
+behavior described below. The runtime route buffer now supports the full
+2048-system table instead of 32 slots; it is not part of pilot serialization.
+`tests/starmap_route_test.cpp` covers shortest paths, one-way/disconnected
+graphs, fog of war, twins, replacement, arrival and long routes.
+
+Original interaction and travel handoff were checked against archived Ghidra
+decompiles of 0x004a4353 and 0x004a8080. The live Ghidra server was unavailable
+for this change; no new original-binary behavior is inferred by the planner.
+
 ## Ghidra touchpoints
 
 The starmap window lives in `NovaUi_*` (0x004a...):

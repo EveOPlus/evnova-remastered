@@ -23,7 +23,8 @@ struct PictImage {
 // BitsRect form used by the 11x9 preferences arrow PICTs (0x86/0x87) and the
 // Key Settings backdrop 0x8b, 16-bit 5-5-5 (2 bytes/pixel, big-endian), and
 // 32-bit sources that the game demotes to its 24-bit RGB path (packbits unit
-// 1, R/G/B planar interleave). Image dimensions come from the frame rect /
+// 1, R/G/B planar interleave), plus four-plane ARGB with alpha discarded.
+// Image dimensions come from the frame rect /
 // opcode-0x0001 blocks, never the PixMap bounds. Row lengths and packbits
 // follow the game's algorithm: the masked rowBytes decides the per-row
 // prefix (1 byte for <= 0xfa, else BE16); rows narrower than 8 bytes (e.g.

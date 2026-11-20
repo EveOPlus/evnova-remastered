@@ -19,10 +19,13 @@
 #include "hud_renderer.hpp"
 #include "impact_effects.hpp"
 #include "intro_cinematic.hpp"
+#include "jump_controls.hpp"
 #include "landed_store.hpp"
 #include "landed_window.hpp"
 #include "mission.hpp"
 #include "mission_script.hpp"
+#include "mouse_controls.hpp"
+#include "navigation_panel.hpp"
 #include "negotiation_dialog.hpp"
 #include "nova_font.hpp"
 #include "nova_random.hpp"
@@ -37,8 +40,10 @@
 #include "ship_visual.hpp"
 #include "spaceflight_view.hpp"
 #include "starmap.hpp"
+#include "system_markets.hpp"
 #include "targeting.hpp"
 #include "travel.hpp"
+#include "util/geometry.hpp"
 #include "weapon.hpp"
 #include "world_wrap.hpp"
 
@@ -56,6 +61,9 @@ namespace game {
 // Spaceflight timing values used by the coordinator.
 constexpr float kOriginalMaxRateFrameMs = 21.0F;
 constexpr float kOriginalTickMs = 1000.0F / 30.0F;
+// Requested remake pacing: player jump motion, cue and fades share one rate.
+// Ordinary flight/combat and the original travel rules keep their own clock.
+constexpr float kQuickJumpTransitionRate = 2.0F;
 
 // g_transition_sound_handle_table (snd 150+i): [4] auto-repair cue. The
 // combat-alert cue is the separate snd 370 "Red Alert" handle (Ghidra
@@ -768,7 +776,8 @@ void PlayerTick_TravelSelectionCommands(GameState &state,
     // Ghidra 0x0044b8ab: the core refreshes the route-map overlay after the
     // destination command (NovaUi_UpdateTravelSelectionOverlay) -- the
     // overlay opens/re-stamps regardless of whether a candidate was found.
-    RouteMap_Open(state);
+    if (!input.quiet_navigation)
+      RouteMap_Open(state);
     if (dest >= 0) {
       // Destination cycled; travel mode is armed but the jump awaits 'j'.
       NovaLog::Info("backslash: destination system {}", dest);
@@ -903,6 +912,8 @@ void PlayerTick_MouseTargetAndControlCommands(SdlPlatform &platform,
   // previous frame's overlay.
   const float window_x = input.window_mouse_x;
   const float window_y = input.window_mouse_y;
+  if (evnova::util::Contains(platform.radar_frame_bounds(), window_x, window_y))
+    return;
   const RouteMapClickResult route_map_click =
       RouteMap_HandleClick(state, platform, window_x, window_y);
   if (route_map_click != RouteMapClickResult::kNotHandled &&
@@ -1078,6 +1089,7 @@ enum class LandCommandResult {
   kContinue,
   kQuit,
   kBlockedFrame,
+  kDockedFrame,
 };
 
 // @port 0x00462410 80% gameplay
@@ -1366,7 +1378,7 @@ LandCommandResult PlayerTick_LandCommandDispatch(SdlPlatform &platform,
     }
     // Docking blocked the loop for the whole landing; freeze gameplay
     // time across it (launch re-enters flight with a fresh clock).
-    return LandCommandResult::kBlockedFrame;
+    return LandCommandResult::kDockedFrame;
   }
   const auto *st = state.scenario.Stellar(state.travel.selected_stellar_id);
   const bool is_station = st != nullptr && (st->flags & 0x10U) != 0U;
@@ -1660,7 +1672,9 @@ void PlayerTick_InteractionCloakAndStatus(GameState &state,
   }
 }
 
-// @port 0x00417600 15% gameplay,cadence,rendering
+// @port 0x00417600 15% gameplay,cadence,rendering,divergence
+// DIVERGENCE(original): J starts or cancels the remake route input controller;
+// jump arrivals continue the plan using normal movement and travel gates.
 // Ghidra 0x00417600 Frame_SpaceflightLoop main loop. Reconstructs the outer
 // phase skeleton (setup + full first tick, then per-frame pre-draw/sim,
 // drawing, post-draw) and the run_full_tick freeze gate. Simulation runs
@@ -1796,7 +1810,8 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
                               false,
                               [&] { view.DrawGameFrame(platform, state, hud); },
                               message.dialog_variant,
-                              /*mission_dialog=*/true);
+                              /*mission_dialog=*/true,
+                              message.movie);
                         });
   view.DrawGameFrame(platform, state, hud);
   platform.Present();
@@ -1832,16 +1847,23 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
   // site calls resync_frame_clock() so the wall-clock gap is never integrated
   // as one giant flight frame (ship integration, ambient stars, shield
   // recharge and the reticle decay all scale by frame_time_ms).
+  JumpKeyControl jump_key;
   const auto resync_frame_clock = [&] {
     prev_tick_ms = platform.gameplay_ticks_ms();
     state.gameplay_now_ms = prev_tick_ms;
+    jump_key.CancelPending();
   };
   // Route-map overlay session assets (Ghidra FUN_004ab9d4 creates the
   // surface + CICNs once at flight-interface setup; the port caches the
   // marker textures + label font for the whole flight loop).
   RouteMapView route_map_view;
+  NavigationPanel navigation_panel;
   route_map_view.Load(platform);
   FlightAutomationController automation;
+  bool suppress_jump_until_release = false;
+  bool manual_jump_assist = false;
+  MouseFlightControl mouse_control;
+  RadialAction pending_mouse_action = RadialAction::cancel;
   // The simulation advances in fixed 30 Hz quanta. Rendering remains the
   // outer loop, so accelerated mode can execute many logical ticks before one
   // presentation without handing AI, travel, or lower-level control routines
@@ -1887,6 +1909,31 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
     // while the simulation stubs do not, and the same snapshot feeds the
     // travel/jump channel. Movement integrates into PlayerShip.
     FlightInput frame_input = platform.PollFlightInput();
+    const auto navigation_input =
+        navigation_panel.Update(platform, state, frame_input);
+    if (navigation_input.changed_route) {
+      automation.Cancel();
+      manual_jump_assist = false;
+      jump_key.CancelPending();
+    }
+    if (std::isfinite(frame_input.scene_zoom_delta) &&
+        frame_input.scene_zoom_delta != 0.0F) {
+      auto scale = platform.presentation_scale();
+      const SDL_FPoint wheel_pointer{frame_input.window_mouse_x,
+                                     frame_input.window_mouse_y};
+      const bool radar_zoom =
+          platform.remastered_graphics() &&
+          evnova::util::Contains(
+              platform.radar_frame_bounds(), wheel_pointer.x, wheel_pointer.y);
+      float &zoom = radar_zoom ? scale.radar : scale.flight_scene;
+      zoom = std::clamp(
+          zoom *
+              std::pow(1.1F,
+                       std::clamp(frame_input.scene_zoom_delta, -20.0F, 20.0F)),
+          kPresentationScaleMin,
+          kPresentationScaleMax);
+      platform.SetPresentationScale(scale);
+    }
     // A resize consumed inside the drain rebuilds the active placement; refresh
     // the cached gameplay viewport half-size before any consumer (the mouse
     // picks compute it directly, but asteroid scatter and spawn bounds read the
@@ -1956,10 +2003,157 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
         binding_held(0x0b) && arm_modifier_held;
     // Eject (binding slot 0x11, default DIK 0x2d = X) plus the arm modifier.
     frame_input.eject = arm_modifier_held && binding_held(0x11);
+    // Remake input layer. The original target, boarding and comm handlers
+    // below still own their range, access and ship-status checks.
+    const auto mouse_geometry = FlightSceneGeometryFor(platform);
+    const SDL_FPoint pointer{frame_input.window_mouse_x,
+                             frame_input.window_mouse_y};
+    const auto scene_pointer = mouse_geometry.placement.ToAuthored(pointer);
+    const bool in_scene =
+        !navigation_input.consumed_pointer && scene_pointer.x >= 0 &&
+        scene_pointer.y >= 0 && scene_pointer.x < mouse_geometry.viewport_w &&
+        scene_pointer.y < mouse_geometry.viewport_h &&
+        !evnova::util::Contains(
+            platform.radar_frame_bounds(), pointer.x, pointer.y);
+    const bool mouse_controls_available =
+        state.player.is_active && !state.travel.engaging &&
+        state.player.hyperspace_jump_timer <= 0.0F &&
+        !NovaAiShip_IsDisabled(state, state.player);
+    mouse_control.Update(frame_input,
+                         in_scene && !state.route_map.overlay_visible,
+                         mouse_controls_available);
+    const bool manual_steering =
+        frame_input.turn_left || frame_input.turn_right || frame_input.thrust ||
+        frame_input.reverse || frame_input.afterburner ||
+        frame_input.face_target || mouse_control.steering();
+    if (manual_steering || frame_input.clear_target || frame_input.land ||
+        frame_input.board || frame_input.cycle_destination_next ||
+        frame_input.cycle_destination_previous || frame_input.starmap ||
+        frame_input.hyperspace_mode) {
+      if (automation.Mining())
+        NovaHud_ShowOverlayMessage(state, "Auto-mine cancelled.");
+      automation.Cancel();
+      manual_jump_assist = false;
+      jump_key.CancelPending();
+    }
+    const auto jump_press =
+        jump_key.Update(frame_input.travel,
+                        platform.wall_ticks_ms(),
+                        state.player.current_system_id,
+                        state.travel.starmap_destination_system_id);
+    const bool jump_pressed = jump_press != JumpPress::none;
+    if (automation.Mining() &&
+        (jump_pressed || frame_input.fire || frame_input.fire_secondary ||
+         frame_input.cycle_secondary || frame_input.clear_secondary)) {
+      NovaHud_ShowOverlayMessage(state, "Auto-mine cancelled.");
+      automation.Cancel();
+    }
+    if (!frame_input.travel)
+      suppress_jump_until_release = false;
+    if (jump_pressed)
+      state.route_map.overlay_visible = false;
+    if (jump_pressed && automation.FollowingRoute()) {
+      suppress_jump_until_release = true;
+      automation.Cancel();
+      manual_jump_assist = false;
+      jump_key.CancelPending();
+      frame_input.travel = false;
+      NovaHud_ShowOverlayMessage(state,
+                                 state.travel.engaging
+                                     ? "Auto-route cancelled after this jump."
+                                     : "Auto-route cancelled.");
+    } else if (jump_press == JumpPress::route && !manual_steering &&
+               automation.FollowRoute(state, host_now_ms)) {
+      suppress_jump_until_release = true;
+      manual_jump_assist = true;
+      mouse_control.Cancel();
+      NovaHud_ShowOverlayMessage(
+          state, "Following route. Press J again or steer to cancel.");
+    } else if (jump_pressed && !manual_steering &&
+               automation.AssistBlockedJump(state, host_now_ms)) {
+      suppress_jump_until_release = true;
+      manual_jump_assist = true;
+      mouse_control.Cancel();
+      NovaHud_ShowOverlayMessage(
+          state, "Flying clear, then jumping. Steer to cancel.");
+    }
+    if (manual_jump_assist) {
+      frame_input.travel = false; // the controller owns the eventual J edge
+      const auto phase = automation.status().phase;
+      if (phase == FlightAutomationPhase::kComplete ||
+          phase == FlightAutomationPhase::kFailed ||
+          phase == FlightAutomationPhase::kCancelled)
+        manual_jump_assist = false;
+    }
+    if (suppress_jump_until_release)
+      frame_input.travel = false;
+    // Hull damage disables flight, not access to targeting, comms and maps.
+    if (frame_input.secondary_clicked && in_scene &&
+        CanOpenMouseRadial(state)) {
+      const auto target = PickMouseTarget(platform, view, state, pointer);
+      auto action = RunMouseRadial(platform, target, pointer, [&] {
+        view.DrawGameFrame(platform, state, hud);
+      });
+      frame_input.primary_clicked = false;
+      frame_input.primary_held = platform.MouseButtonDown(SDL_BUTTON_LEFT);
+      mouse_control.Update(frame_input, false, mouse_controls_available);
+      state.command_latches.return_to_menu_was_held = true;
+      if (action != RadialAction::cancel) {
+        automation.Cancel();
+        manual_jump_assist = false;
+        if (action != RadialAction::markets)
+          SelectMouseTarget(state, target);
+      }
+      std::optional<std::int16_t> market_stellar;
+      if (action == RadialAction::markets) {
+        mouse_control.Cancel();
+        market_stellar = RunSystemMarkets(
+            platform, state, [&] { view.DrawGameFrame(platform, state, hud); });
+        action = market_stellar ? RadialAction::dock : RadialAction::cancel;
+      }
+      if (action == RadialAction::mine) {
+        mouse_control.Cancel();
+        (void)automation.MineAsteroid(
+            state, target.id, platform.gameplay_ticks_ms());
+        NovaHud_ShowOverlayMessage(state, automation.status().detail);
+      } else if (action == RadialAction::dock &&
+                 NovaAiShip_IsDisabled(state, state.player)) {
+        NovaHud_ShowOverlayMessage(state,
+                                   "Ship disabled: unable to auto-dock.");
+      } else if (action == RadialAction::dock) {
+        mouse_control.Cancel();
+        const auto stellar = market_stellar.value_or(
+            target.kind == MouseTargetKind::stellar
+                ? target.id
+                : NovaTargeting_FindNearestAvailableTravelStellar(state));
+        if (stellar >= 0x80) {
+          const float envelope = Stellar_MaxLandingDistance(
+              StellarArrivalSpriteFullWidth(platform, view, state, stellar));
+          const bool started = automation.LandAt(state,
+                                                 std::to_string(stellar),
+                                                 platform.gameplay_ticks_ms(),
+                                                 180000,
+                                                 envelope);
+          NovaHud_ShowOverlayMessage(state,
+                                     started ? "Auto-docking. Steer to cancel."
+                                             : automation.status().detail);
+        } else {
+          NovaHud_ShowOverlayMessage(state,
+                                     "No landing destination in this system.");
+        }
+      } else {
+        pending_mouse_action = action;
+      }
+      resync_frame_clock();
+      simulation_accumulator_ms = kOriginalTickMs;
+      simulation_tick_ms =
+          static_cast<double>(state.gameplay_now_ms) - kOriginalTickMs;
+    }
     // Probe automation is an optional input producer. It runs after both SDL/
     // probe input and persisted bindings have populated the snapshot, but
     // before any player-command edge latch observes it.
     if (const auto request = platform.probe().ConsumeAutomationRequest()) {
+      mouse_control.Cancel();
       switch (request->kind) {
       case ProbeAutomationRequest::Kind::kLandAt: {
         // Resolve the target's real per-axis arrival envelope from its
@@ -1993,9 +2187,6 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
         break;
       }
     }
-    if (platform.probe().ConsumeAutomationDocked()) {
-      automation.ObservedDocked();
-    }
     // Ordinary mode preserves the original 21 ms outer-call cadence. Probe
     // acceleration intentionally switches to 30 Hz outer frames to reduce
     // scheduler overhead; raw-call consumers still replay their 21 ms calls
@@ -2010,7 +2201,52 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
           static_cast<std::uint64_t>(std::max(0.0, simulation_tick_ms));
       const float frame_time_ms = simulation_quantum_ms;
       FlightInput input = frame_input;
+      if (mouse_control.steering() && in_scene && !state.travel.engaging) {
+        const auto *mouse_ship_class = state.scenario.Ship(
+            static_cast<std::int16_t>(state.player.ship_class_id + 0x80));
+        const float turn_step =
+            mouse_ship_class
+                ? std::round(mouse_ship_class->turn_rate * 0.1F) *
+                      0.01745329252F * frame_time_ms / kOriginalTickMs
+                : 0.02F;
+        const auto center = mouse_geometry.placement.ToWindow(
+            {mouse_geometry.viewport_w * 0.5F,
+             mouse_geometry.viewport_h * 0.5F});
+        (void)ApplyMouseSteering(state.player.heading,
+                                 {pointer.x - center.x, pointer.y - center.y},
+                                 turn_step,
+                                 input);
+      }
+      switch (pending_mouse_action) {
+      case RadialAction::hail:
+        input.target_action = true;
+        state.command_latches.target_action_was_held = false;
+        break;
+      case RadialAction::board:
+        input.board = true;
+        state.command_latches.board_was_held = false;
+        break;
+      case RadialAction::map:
+        input.starmap = true;
+        state.command_latches.starmap_was_held = false;
+        break;
+      case RadialAction::missions:
+        input.mission_info = true;
+        state.command_latches.mission_info_was_held = false;
+        break;
+      default:
+        break;
+      }
+      pending_mouse_action = RadialAction::cancel;
+      const bool was_following_route = automation.FollowingRoute();
+      const bool was_mining = automation.Mining();
+      const auto previous_detail =
+          was_mining ? automation.status().detail : std::string{};
       automation.Tick(state, now_ms, input, frame_time_ms / kOriginalTickMs);
+      if (was_mining && previous_detail != automation.status().detail)
+        NovaHud_ShowOverlayMessage(state, automation.status().detail);
+      if (was_following_route && !automation.FollowingRoute())
+        NovaHud_ShowOverlayMessage(state, automation.status().detail);
       const auto &automation_status = automation.status();
       const auto goal_name = [&] {
         switch (automation_status.goal) {
@@ -2018,8 +2254,12 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
           return "land_at";
         case FlightAutomationGoal::kJumpTo:
           return "jump_to";
+        case FlightAutomationGoal::kFollowRoute:
+          return "follow_route";
         case FlightAutomationGoal::kDestroy:
           return "destroy";
+        case FlightAutomationGoal::kMine:
+          return "mine";
         case FlightAutomationGoal::kNone:
           return "none";
         }
@@ -2455,8 +2695,15 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
         NovaTravel_Tick(
             state,
             input.travel,
-            frame_time_ms,
+            frame_time_ms * kQuickJumpTransitionRate,
             audio.CountActiveByKey(game::kHyperspaceWarpUpSoundKey) > 0);
+        // One physical hold may start only one jump. Keep it suppressed
+        // through arrival until release; the route controller emits its own
+        // input after this physical-key gate on subsequent ticks.
+        if (input.travel && state.travel.engaging) {
+          suppress_jump_until_release = true;
+          frame_input.travel = false;
+        }
         // Fresh-pilot flight tutorial (Ship_HandlePlayerShipCore 0x00451f8f):
         // runs on the player tick independently of the land/jump commands.
         TickFlightTutorialHints(state, prefs);
@@ -2465,6 +2712,18 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
       // region. A newly engaged jump therefore owns this frame immediately;
       // normal steering must not contribute one final integration step.
       if (!player_tick_consumed && !state.travel.engaging) {
+        if (mouse_control.braking() &&
+            state.player.hyperspace_jump_timer <= 0.0F &&
+            !NovaAiShip_IsDisabled(state, state.player)) {
+          const auto stats = state.stat_cache_valid
+                                 ? state.cached_stats
+                                 : Outfit_ComputePlayerEffectiveStats(state);
+          const float ionization = std::min(
+              0.7F, NovaOutfit_GetIonizationIntensity(state, state.player));
+          ApplyMouseBraking(state.player,
+                            stats.thrust_raw * 0.0002F * (1.0F - ionization),
+                            frame_time_ms / kOriginalTickMs);
+        }
         PlayerTick_ManualFlightAndRegeneration(
             state, input, frame_time_ms / kOriginalTickMs, face_target_armed);
       } else if (!timed_action_active && state.player.is_active &&
@@ -2520,7 +2779,8 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
           // shorter snd 129.
           audio.Play(*warp_up_cue,
                      1.0F,
-                     game::NovaTravel_PlayerJumpDurationMultiplier(state),
+                     game::NovaTravel_PlayerJumpDurationMultiplier(state) *
+                         kQuickJumpTransitionRate,
                      game::kHyperspaceWarpUpSoundKey,
                      /*priority_width=*/0x32);
         }
@@ -2696,12 +2956,18 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
           returning_to_menu = true;
           break;
         }
-        if (landed == LandCommandResult::kBlockedFrame) {
+        if (landed == LandCommandResult::kDockedFrame) {
+          // Complete the remake's docking goal in the game itself. The probe
+          // only observes arrivals and is absent from the playable build.
+          automation.ObservedDocked();
+          mouse_control.Cancel();
+        }
+        if (landed == LandCommandResult::kBlockedFrame ||
+            landed == LandCommandResult::kDockedFrame) {
           resync_frame_clock();
           // A landing/service modal may have returned to flight with a large
           // accelerated-tick batch still queued. End this batch at the modal
-          // boundary so the next outer frame can publish/observe the docked
-          // state before probe automation emits another landing edge.
+          // boundary so launch resumes with fresh input and timing.
           break;
         }
       }
@@ -2964,7 +3230,8 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
                 false,
                 [&] { view.DrawGameFrame(platform, state, hud); },
                 message.dialog_variant,
-                /*mission_dialog=*/true);
+                /*mission_dialog=*/true,
+                message.movie);
           });
 
       // Ghidra scope 8 "misc handlers" / scope 0xd. MINIMAL MOVE: the original
@@ -2997,7 +3264,9 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
     // Route-map overlay blit (Ghidra 0x00439bd0, drawn over the frame after
     // the HUD overlay message, before the target-category panel): draws only
     // while the overlay flag is up, alpha-faded per the interaction timer.
-    route_map_view.Draw(platform, state);
+    if (!state.navigation_panel.visible)
+      route_map_view.Draw(platform, state);
+    navigation_panel.Draw(platform, state);
     platform.Present();
 
     // Ghidra scope 3 "post-draw tasks": pump the primary mouse command; when
@@ -3020,7 +3289,12 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
     // Advance the hyperspace flash at the render cadence. The mode gates the
     // rate (1.5 s Mac fade-in/fade-out vs ~60 ms one-frame fallback); travel
     // only latches the spin-up fade once when its scalar crosses the threshold.
-    NovaTravel_AdvanceScreenFlash(state, host_frame_time_ms);
+    const bool jump_fade =
+        state.screen_flash_mode == GameState::ScreenFlashMode::kFadeIn ||
+        state.screen_flash_mode == GameState::ScreenFlashMode::kFadeOut;
+    NovaTravel_AdvanceScreenFlash(
+        state,
+        host_frame_time_ms * (jump_fade ? kQuickJumpTransitionRate : 1.0F));
     platform.PaceFrame();
   }
 }

@@ -62,6 +62,8 @@ struct PresentationScale {
   // Mission-dialog multiplier applied on top of `ui` at the two mission
   // entrypoints only.
   float mission = 1.0F;
+  // Independent minimap magnification; persisted with the other display prefs.
+  float radar = 1.0F;
 
   // Composed request for the mission offer/variant and mission info dialogs:
   // authored UI (so they follow `ui`) with the mission multiplier on top,
