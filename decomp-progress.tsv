@@ -278,11 +278,11 @@ address	name	impl_file	reimpl_pct	comment
 0x0044BEB0	PlayerTick_WeaponCommands	src/game/weapon_banks.cpp	75%	gameplay,synthetic
 0x0044C0B1	PlayerTick_FaceTargetCommand	src/game/spaceflight_player_state.cpp	90%	correctness,synthetic
 0x0044C18A	PlayerTick_HyperspaceCommand	src/game/travel.cpp	60%	gameplay,synthetic
-0x0044C8D0	PlayerTick_ManualFlightAndRegeneration	src/game/spaceflight_player_state.cpp	90%	gameplay,divergence,bugfix,synthetic
+0x0044C8D0	PlayerTick_ManualFlightAndRegeneration	src/game/spaceflight_player_state.cpp	90%	gameplay,bugfix,synthetic
 0x0044C92E	PlayerTick_TurnInput	src/game/spaceflight_movement.cpp	100%	synthetic
 0x0044C980	PlayerTick_NormalizeHeading	src/game/spaceflight_movement.cpp	100%	synthetic
 0x0044C9AB	PlayerTick_AfterburnerCommand	src/game/spaceflight_player_state.cpp	100%	synthetic
-0x0044CA3D	PlayerTick_ThrustAndEngineGlow	src/game/spaceflight_player_state.cpp	85%	gameplay,synthetic
+0x0044CA3D	PlayerTick_ThrustAndEngineGlow	src/game/spaceflight_player_state.cpp	85%	gameplay,bugfix,synthetic
 0x0044CA6B	PlayerTick_TurnBankAnimation	src/game/spaceflight_player_state.cpp	90%	correctness,synthetic
 0x0044CB99	PlayerTick_ShieldAndArmorRegeneration	src/game/spaceflight_player_state.cpp	100%	synthetic
 0x0044CCAF	PlayerTick_HyperspaceTunnelAcceleration	src/game/travel.cpp	90%	rendering,synthetic

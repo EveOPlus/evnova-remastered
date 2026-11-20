@@ -3,7 +3,11 @@
 #include "game/spaceflight.hpp"
 #include "game/spaceflight_internal.hpp"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+
+#include "game/outfit.hpp"
+#include "game/player_info_window.hpp"
 
 #include <cstdint>
 #include <initializer_list>
@@ -196,9 +200,99 @@ TEST_CASE("player afterburner burns without the forward-thrust key",
   for (int i = 0; i < 60; ++i) {
     PlayerTick_ManualFlightAndRegeneration(state, input, 1.0F, false);
   }
-  // Heading 0: 2.75 * 0.1 px/tick^2 along -y, bounded by max * 1.8.
-  CHECK(state.player.vel_y < -6.0F);
+  // Heading 0: non-strict max 6 * afterburner 1.8 = 10.8 px/tick.
+  // The original afterburner tail oscillates around its projection limit.
+  CHECK(state.player_speed_cap_y == Catch::Approx(10.8F));
+  CHECK(state.player.vel_y < -10.0F);
+  CHECK(state.player.vel_y > -11.1F);
   CHECK(state.player.fuel_points < 1000.0F);
+}
+
+TEST_CASE("player flight reaches the original strict and non-strict speed caps",
+          "[player][speed]") {
+  // Ship_ComputeShipEffectiveMaxSpeed 0x004642e0: player opcode-8 aggregate,
+  // then the non-strict 1.5x tail; the information panel cancels that tail.
+  for (const bool strict : {false, true}) {
+    for (const bool inertialess : {false, true}) {
+      for (const bool upgraded : {false, true}) {
+        for (const float dt : {.63F, 1.0F, 2.0F}) {
+          GameState state;
+          state.pilot.strict_play = strict;
+          state.player.is_active = true;
+          state.player.ship_class_id = 0;
+          state.player.armor_points = 100;
+          state.scenario.ships.resize(1);
+          auto &cls = state.scenario.ships[0];
+          cls.accel = 1250;
+          cls.speed = 600;
+          cls.turn_rate = 100;
+          cls.base_armor = 100;
+          cls.flags_secondary = inertialess ? 0x40 : 0;
+          if (upgraded) {
+            state.scenario.outfits.resize(1);
+            state.scenario.outfits[0].mod_type = 8;
+            state.scenario.outfits[0].mod_val = 100;
+            state.inventory.outfit_owned_count[0] = 1;
+          }
+          const float resource_speed = upgraded ? 700.0F : 600.0F;
+          const float expected = resource_speed * .01F * (strict ? 1 : 1.5F);
+          FlightInput input;
+          input.thrust = true;
+          for (int frame = 0; frame < 180; ++frame)
+            PlayerTick_ManualFlightAndRegeneration(state, input, dt);
+          CAPTURE(strict, inertialess, upgraded, dt);
+          CHECK(state.player.speed == Catch::Approx(expected));
+          CHECK(state.player.vel_y == Catch::Approx(-expected));
+          CHECK(state.player_speed_cap_x == Catch::Approx(expected));
+          CHECK(state.player_speed_cap_y == Catch::Approx(expected));
+          CHECK(NovaPlayerInfo_DisplayedMaxSpeed(state) ==
+                static_cast<int>(resource_speed));
+          PlayerTick_ManualFlightAndRegeneration(state, {}, dt);
+          CHECK(state.player.speed == Catch::Approx(expected));
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("inertialess afterburner reaches boost speed while thrust is held",
+          "[player][afterburner][inertialess]") {
+  for (const bool safe : {false, true}) {
+    for (const bool thrust : {false, true}) {
+      for (const float dt : {.63F, 1.0F, 2.0F}) {
+        GameState state;
+        state.bugfixes.safe = safe;
+        state.player.is_active = true;
+        state.player.ship_class_id = 0;
+        state.player.armor_points = 100;
+        state.player.fuel_points = 300;
+        state.scenario.ships.resize(1);
+        auto &cls = state.scenario.ships[0];
+        cls.accel = 1250;
+        cls.speed = 600;
+        cls.turn_rate = 100;
+        cls.base_armor = 100;
+        cls.flags_secondary = 0x40;
+        state.scenario.outfits.resize(1);
+        state.scenario.outfits[0].mod_type = 15;
+        state.scenario.outfits[0].mod_val = 1;
+        state.inventory.outfit_owned_count[0] = 1;
+        FlightInput input;
+        input.thrust = thrust;
+        input.afterburner = true;
+        for (int frame = 0; frame < 120; ++frame)
+          PlayerTick_ManualFlightAndRegeneration(state, input, dt);
+        CAPTURE(safe, thrust, dt);
+        // Compatibility keeps the original per-frame unboosted clamp on Up;
+        // the safe fix gives held thrust the same 1.8x ceiling as Z alone.
+        const float expected = !safe && thrust ? 9.0F + .25F * 2.75F : 16.2F;
+        CHECK(state.player.speed == Catch::Approx(expected));
+        CHECK(-state.player.vel_y == Catch::Approx(expected));
+        CHECK(state.player.fuel_points < 300);
+        CHECK(state.player.fuel_points > 0);
+      }
+    }
+  }
 }
 
 } // namespace game

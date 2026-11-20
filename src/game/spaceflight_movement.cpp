@@ -274,9 +274,16 @@ NovaPlayer_IntegrateMovement(PlayerShip &ship,
       // Ghidra 0x004502f1 thrust arm, inertialess variant: thrust
       // accumulates the scalar speed (+0x48), clamped to the effective max
       // speed; the steering block below converts it into velocity.
-      ship.speed =
-          std::min(ship.speed + stats.thrust_px_per_tick2 * elapsed_ticks,
-                   stats.max_speed_px_per_tick);
+      // BUGFIX(original): this unconditional unboosted clamp defeats the
+      // 0x00451630 afterburner tail every frame Up is held. Under the safe
+      // policy, share the ordinary ship's boosted ceiling and gravity gate.
+      const float thrust_max =
+          opts.inertialess_boost_thrust_cap && opts.afterburner &&
+                  !opts.gravity_pull
+              ? stats.max_speed_px_per_tick * kAfterburnerOverspeedFactor
+              : stats.max_speed_px_per_tick;
+      ship.speed = std::min(
+          ship.speed + stats.thrust_px_per_tick2 * elapsed_ticks, thrust_max);
     } else {
       // Forward thrust: polar step toward the heading, per-axis clamped to
       // the class top speed projection (Math_AddPolarVelocityWithClamp

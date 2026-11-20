@@ -1247,25 +1247,22 @@ TEST_CASE("automatic docking boosts far away and lands without overshooting") {
   FlightAutomationController controller;
   REQUIRE(controller.LandAt(state, "Earth", 0));
   bool boosted = false, docked = false;
+  float peak_speed = 0;
   for (int tick = 0; tick < 2000; ++tick) {
     FlightInput input;
     controller.Tick(state, static_cast<std::uint64_t>(tick * 33), input);
     boosted = boosted || input.afterburner;
+    peak_speed = std::max(peak_speed, state.player.speed);
     if (input.land) {
       CHECK_FALSE(input.afterburner);
       CHECK(std::hypot(state.player.vel_x, state.player.vel_y) < .8F);
       docked = true;
       break;
     }
-    PlayerMovementOptions opts;
-    opts.inertialess = NovaPlayer_IsInertialess(state);
-    opts.afterburner = input.afterburner;
-    opts.afterburner_push_frame_scaled = true;
-    if (input.afterburner)
-      state.player.fuel_points -= 1;
-    (void)NovaPlayer_IntegrateMovement(state.player, input, cls, 1, opts);
+    PlayerTick_ManualFlightAndRegeneration(state, input, 1);
   }
   CHECK(boosted);
+  CHECK(peak_speed > cls.speed * .015F * 1.1F);
   CHECK(docked);
   CHECK(state.player.fuel_points >= 100);
 }
@@ -1296,8 +1293,8 @@ TEST_CASE("Vell-os docking brakes with the ship's actual movement model",
         state.player.pos_x = -700;
         state.player.pos_y = 100;
         state.player.heading = 0;
-        state.player.vel_y = -cls.speed * .01F;
-        state.player.speed = cls.speed * .01F;
+        state.player.vel_y = -cls.speed * .015F;
+        state.player.speed = cls.speed * .015F;
         state.travel.selected_stellar_id = 0x80;
         state.travel.engage_timer = 1000;
         REQUIRE(NovaPlayer_IsInertialess(state));
@@ -1318,10 +1315,7 @@ TEST_CASE("Vell-os docking brakes with the ship's actual movement model",
             docked = true;
             break;
           }
-          PlayerMovementOptions opts;
-          opts.inertialess = NovaPlayer_IsInertialess(state);
-          (void)NovaPlayer_IntegrateMovement(
-              state.player, input, cls, dt, opts);
+          PlayerTick_ManualFlightAndRegeneration(state, input, dt);
         }
         CAPTURE(motion,
                 dt,
@@ -1352,8 +1346,8 @@ TEST_CASE("Vell-os boarding settles alongside a drifting disabled hull",
     state.player.primary_target_ship_slot = 1;
     state.player.pos_x = -600;
     state.player.pos_y = 200;
-    state.player.vel_y = -6;
-    state.player.speed = 6;
+    state.player.vel_y = -9;
+    state.player.speed = 9;
     auto &target = state.ShipAt(1);
     target.is_active = true;
     target.ship_class_id = 0;
@@ -1378,9 +1372,7 @@ TEST_CASE("Vell-os boarding settles alongside a drifting disabled hull",
         boarded = true;
         break;
       }
-      PlayerMovementOptions opts;
-      opts.inertialess = true;
-      (void)NovaPlayer_IntegrateMovement(state.player, input, cls, dt, opts);
+      PlayerTick_ManualFlightAndRegeneration(state, input, dt);
       target.pos_x += target.vel_x * dt;
       target.pos_y += target.vel_y * dt;
     }
@@ -1416,9 +1408,7 @@ TEST_CASE("Inertialess mining matches drift and brakes after completion",
       }
       if (controller.status().phase == FlightAutomationPhase::kComplete)
         break;
-      PlayerMovementOptions opts;
-      opts.inertialess = true;
-      (void)NovaPlayer_IntegrateMovement(state.player, input, cls, dt, opts);
+      PlayerTick_ManualFlightAndRegeneration(state, input, dt);
       rock.target_pos_x += rock.target_vel_x * dt;
     }
     CAPTURE(dt);
@@ -1443,8 +1433,8 @@ TEST_CASE("A full-speed Dart already beside a port brakes and docks",
     state.player.ship_class_id = 0;
     state.player.armor_points = 100;
     state.player.pos_y = 15;
-    state.player.vel_y = -6;
-    state.player.speed = 6;
+    state.player.vel_y = -9;
+    state.player.speed = 9;
     state.travel.selected_stellar_id = 0x80;
     state.travel.engage_timer = 1000;
     FlightAutomationController controller;
@@ -1462,9 +1452,7 @@ TEST_CASE("A full-speed Dart already beside a port brakes and docks",
         docked = true;
         break;
       }
-      PlayerMovementOptions opts;
-      opts.inertialess = true;
-      (void)NovaPlayer_IntegrateMovement(state.player, input, cls, dt, opts);
+      PlayerTick_ManualFlightAndRegeneration(state, input, dt);
     }
     CAPTURE(dt);
     CHECK(docked);

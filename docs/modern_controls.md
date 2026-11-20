@@ -42,6 +42,10 @@ Automatic docking, boarding and mining recognize inertialess ships such as the
 Vell-os Dart, Arrow and Javelin, including ships using an inertial dampener.
 These ships brake with their normal reverse control, reduce speed before a
 tight turn, and match a moving target's drift before boarding or mining.
+Speed limits include the original 1.5x player bonus when Strict Play is off;
+the Dart reaches 9 world units per normalized tick (6 in Strict Play). The
+information panel retains the original resource-scale value of 600 in both
+modes. Autopilot approach and braking calculations use the same effective cap.
 Ordinary ships retain their turn-and-thrust braking. Docking clearance,
 boarding alignment and range, fuel and equipment requirements still apply.
 
@@ -49,6 +53,10 @@ Two left presses within 500 ms and 12 screen pixels start cruise. The second
 press locks the direction relative to the ship; moving the pointer afterwards
 does not change it. A fresh hold or keyboard steering takes control again.
 Cruise uses normal thrust and top speed, without automatically using afterburner.
+Hold Z to use an installed afterburner. With Safe bug fixes enabled (the default),
+inertialess ships can reach the same 1.8x boosted maximum while holding Up or
+mouse steering as they can with Z alone. Turning Safe bug fixes off restores
+the original conflicting thrust clamp. Normal fuel and gravity limits apply.
 
 Releasing a mouse flight hold stops the mouse steering and thrust inputs and
 lets the ship coast under its normal physics, including when released over a

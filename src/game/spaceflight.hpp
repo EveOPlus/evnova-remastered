@@ -94,6 +94,9 @@ struct PlayerMovementOptions {
   // unscaled per-call 2.75x push by elapsed time. Off replays the original
   // fixed push once per call.
   bool afterburner_push_frame_scaled = false;
+  // BUGFIX(original) gate (BugFixPolicy::safe): normal thrust must not reset
+  // an inertialess ship to its unboosted speed while afterburning.
+  bool inertialess_boost_thrust_cap = false;
 };
 
 // Pure free-flight physics integrator (unit-testable; no SDL). Derives stats

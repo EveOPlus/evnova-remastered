@@ -122,3 +122,8 @@ tracker appends `missions.title`, `missions.close`, `missions.list`,
 as an alias for the selected row) to the current flight/map/port
 surface. `PublishOverlayUi` replaces only its own prefixed controls so the map
 and station remain testable. The panel updates live as mission slots change.
+
+The `player` query includes `strict_play`, `effective_max_speed` and the live
+`speed_cap_x/y`; `ships` includes each NPC's `effective_max_speed`. These use
+world units per normalized 30 Hz tick, not the information panel's resource
+scale. They distinguish a flight cap mismatch from outfit/government modifiers.

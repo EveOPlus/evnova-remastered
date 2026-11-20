@@ -42,7 +42,7 @@ NovaPlayerInfo_BuildSummaryTexts(const GameState &state);
 // Ghidra 0x0049a540 (the Max Speed row). The panel value is
 // Ship_ComputeShipEffectiveMaxSpeed * 100, times 2/3 when Strict Play is off;
 // the non-strict 1.5x and the 2/3 cancel, so it reports the raw Speed plus
-// opcode-8 mods. The port omits the 1.5x flight bonus but keeps this display.
+// opcode-8 mods in both modes, despite the different actual flight caps.
 [[nodiscard]] int NovaPlayerInfo_DisplayedMaxSpeed(const GameState &state);
 
 // Outcome of one Player Info session. The original latches the jettison arm

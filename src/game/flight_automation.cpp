@@ -5,6 +5,7 @@
 
 #include "outfit.hpp"
 #include "ship_ai.hpp"
+#include "spaceflight.hpp"
 #include "travel.hpp"
 #include "weapon.hpp"
 
@@ -225,7 +226,11 @@ AutomationMotionStats MotionStats(const GameState &state) {
           : 0.0F;
   const float turn = std::round(stats.turn_raw * .1F * (1.0F - ionization));
   const float thrust = stats.thrust_raw * .0002F * (1.0F - ionization);
-  const float speed = stats.speed_raw * .01F;
+  const ShipClass *cls = ShipClassFor(state, state.player);
+  const float speed = cls != nullptr
+                          ? NovaShip_ComputeEffectiveMaxSpeedPxPerTick(
+                                state, state.player, *cls)
+                          : stats.speed_raw * .01F;
   return {turn, thrust, speed, NovaPlayer_IsInertialess(state)};
 }
 

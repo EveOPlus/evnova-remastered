@@ -141,9 +141,7 @@ constexpr double kThrustDisplay = 0.25;
 // and when Strict Play is off also * DAT_005759d0 (2/3) (0x0049b1b4). The
 // effective helper already bakes in the non-strict 1.5x (DAT_005757b8), so
 // x100, x1.5 and x2/3 cancel and the panel shows the raw resource Speed plus
-// opcode-8 mods in both modes. The port does not reproduce the 1.5x flight
-// bonus (DIVERGENCE in PlayerTick_ManualFlightAndRegeneration), but the panel
-// still reports the original value.
+// opcode-8 mods in both modes, despite the different actual flight caps.
 constexpr double kSpeedNoStrictScale = 2.0 / 3.0; // DAT_005759d0
 constexpr double kPercentScale = 100.0;           // DAT_00575958
 constexpr float kEmptyThreshold = 0.0078125F;     // DAT_00575990 (1/128)
@@ -778,9 +776,8 @@ bool RunJettisonConfirmDialog(SdlPlatform &platform,
 // Ship_ComputeShipEffectiveMaxSpeed (px/frame) * DAT_005759c8 (100), and when
 // Strict Play is off also * DAT_005759d0 (2/3). The non-strict 1.5x baked into
 // the helper and the 2/3 display factor cancel, so this reports the raw
-// resource Speed + opcode-8 mods in both modes. The port does not reproduce
-// the 1.5x flight bonus (see PlayerTick_ManualFlightAndRegeneration), but this
-// still reports the original displayed value.
+// resource Speed + opcode-8 mods in both modes, despite the different actual
+// flight caps.
 int NovaPlayerInfo_DisplayedMaxSpeed(const GameState &state) {
   const ShipClass *ship_class = state.scenario.Ship(
       static_cast<std::int16_t>(state.player.ship_class_id + 0x80));

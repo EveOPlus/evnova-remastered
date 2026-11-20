@@ -1463,7 +1463,7 @@ bool PlayerTick_FaceTargetCommand(GameState &state,
   return true;
 }
 
-// @port 0x0044C8D0 90% gameplay,divergence,bugfix,synthetic
+// @port 0x0044C8D0 90% gameplay,bugfix,synthetic
 // Ghidra 0x0044C8D0 PlayerTick_ManualFlightAndRegeneration, internal umbrella
 // of Ship_HandlePlayerShipCore. Relevant synthetic CFGs: turn input
 // 0x0044C92E -> 0x0044C980; joined afterburner/thrust/glow
@@ -1529,14 +1529,15 @@ void PlayerTick_ManualFlightAndRegeneration(GameState &state,
 
   ShipClass effective_class;
   effective_class.accel = eff.thrust_raw;
-  // DIVERGENCE(original): Ship_ComputeShipEffectiveMaxSpeed (0x004642e0)
-  // multiplies the player cap by DAT_005757b8 = 1.5 when Strict Play is off.
-  // The port deliberately omits that bonus on the manual-flight path, so a
-  // non-strict pilot flies at the strict-play-equivalent cap. NovaShip_-
-  // ComputeEffectiveMaxSpeedPxPerTick keeps the 1.5x for its own consumers
-  // (ionization ramp, impact clamp) and NovaPlayerInfo_DisplayedMaxSpeed still
-  // reports the original panel value.
-  effective_class.speed = eff.speed_raw;
+  // Ship_ComputeShipEffectiveMaxSpeed (0x004642e0) includes the original
+  // non-strict-play 1.5x bonus. Use the same cap as NPC escorts, impact
+  // handling and ionization; raw outfit speed omits that final multiplier.
+  const ShipClass *player_cls = ShipClassFor(state, p);
+  effective_class.speed =
+      player_cls != nullptr
+          ? NovaShip_ComputeEffectiveMaxSpeedPxPerTick(state, p, *player_cls) *
+                100.0F
+          : eff.speed_raw;
   effective_class.turn_rate = eff.turn_raw;
   // Player tails of Ship_ComputeShipEffectiveThrust (0x004640a0) and
   // Ship_ComputeShipMaxTurnRateDeg (0x00463e70). TODO(decomp): the original
@@ -1600,6 +1601,7 @@ void PlayerTick_ManualFlightAndRegeneration(GameState &state,
   movement_opts.afterburner = afterburner_active;
   movement_opts.gravity_pull = gravity_present;
   movement_opts.afterburner_push_frame_scaled = state.bugfixes.safe;
+  movement_opts.inertialess_boost_thrust_cap = state.bugfixes.safe;
   movement_opts.speed_cap_x = state.player_speed_cap_x;
   movement_opts.speed_cap_y = state.player_speed_cap_y;
   // Capture the applied turn direction (keyboard OR auto-turn) for the bank
@@ -1611,11 +1613,12 @@ void PlayerTick_ManualFlightAndRegeneration(GameState &state,
   }
 
   TickPlayerTurnBankAnimation(state, movement_stats.turn_dir, elapsed_ticks);
-  const ShipClass *player_cls =
-      state.scenario.Ship(static_cast<std::int16_t>(p.ship_class_id + 0x80));
-  // @port 0x0044CA3D 85% gameplay,synthetic
+  // @port 0x0044CA3D 85% gameplay,bugfix,synthetic
   // Ghidra 0x0044ca3d PlayerTick_ThrustAndEngineGlow (synthetic region of
-  // 0x0044aa70). Inertialess scalar-speed branch remains incomplete.
+  // 0x0044aa70). Thrust runs in NovaPlayer_IntegrateMovement; engine-glow
+  // reconstruction remains incomplete.
+  // BUGFIX(original): safe policy widens the inertialess thrust cap during
+  // afterburning so holding thrust does not cancel the boost each frame.
   // TODO(decomp(0x0044aa70)) skipped: the player engine-glow state machine is
   // still a clean-room target interpolation. Reconstruct its distinct normal
   // thrust, inertialess, afterburner, banking, turnaround, and hyperspace

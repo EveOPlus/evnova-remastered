@@ -5,6 +5,7 @@
 #include "outfit.hpp"
 #include "scenario_data.hpp"
 #include "ship_ai.hpp"
+#include "spaceflight.hpp"
 #include "story_journal.hpp"
 #include "travel.hpp"
 #include "weapon.hpp"
@@ -307,6 +308,13 @@ std::string ProbeState_Snapshot(const GameState &state,
     j.num("vel_y", state.player.vel_y);
     j.num("heading", state.player.heading);
     j.num("speed", state.player.speed);
+    j.boolean("strict_play", state.pilot.strict_play);
+    j.num("effective_max_speed",
+          ship_class != nullptr ? NovaShip_ComputeEffectiveMaxSpeedPxPerTick(
+                                      state, state.player, *ship_class)
+                                : 0.0F);
+    j.num("speed_cap_x", state.player_speed_cap_x);
+    j.num("speed_cap_y", state.player_speed_cap_y);
     j.num("shield", state.player.shield_points);
     j.num("armor", state.player.armor_points);
     j.num("fuel", state.player.fuel_points);
@@ -398,6 +406,10 @@ std::string ProbeState_Snapshot(const GameState &state,
       row.str("ship_class", cls != nullptr ? cls->display_name : "");
       row.num("ship_instance_id", ship.ship_instance_id);
       row.num("government_id", ship.faction_or_government_id);
+      row.num("effective_max_speed",
+              cls != nullptr ? NovaShip_ComputeEffectiveMaxSpeedPxPerTick(
+                                   state, ship, *cls)
+                             : 0.0F);
       // Mission/pers tagging and the capture gates. pers_def_slot is the
       // 0x80-based personality index; mission_fleet_slot == -1 marks an
       // ordinary ship (the boarding selector skips mission-fleet ships).
