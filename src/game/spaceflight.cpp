@@ -2963,17 +2963,9 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
           state.player.timed_action_counter <= 0 &&
           state.player.death_timer_active <= 0.0F &&
           state.arrival_command_grace_frames <= 0) {
-        std::size_t visible_missions = 0;
-        for (std::size_t slot = 0;
-             slot < state.active_mission_runtime_flags.size();
-             ++slot) {
-          const auto &flags = state.active_mission_runtime_flags[slot];
-          if (flags.is_active &&
-              (flags.flags_primary_at_accept & 0x400) == 0U) {
-            ++visible_missions;
-          }
-        }
-        if (visible_missions == 0) {
+        // Community journal also stays available between accepted story
+        // missions.
+        if (MissionJournalRows(state).empty()) {
           state.pending_ui_sounds.push_back({3, 1});
           NovaHud_ShowOverlayMessage(
               state,

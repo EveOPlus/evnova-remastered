@@ -1310,6 +1310,7 @@ RunStarmapSearchDialog(SdlPlatform &platform,
 // original raw-appends duplicates into its 32-slot global. Consumers
 // (0x004a8100 arrow draw, 0x004a3aa0 click gate) only test membership, so
 // output is identical.
+// Community story leads also mark their known contact system.
 // Stellar selection is shared with MissionDestinationStellar for market badges.
 std::vector<std::int16_t> BuildMissionTargetSystems(const GameState &state) {
   std::vector<std::int16_t> out;
@@ -1344,6 +1345,9 @@ std::vector<std::int16_t> BuildMissionTargetSystems(const GameState &state) {
           Misn_ResolveVisibleSystemForTravel(state, mission.current_system_id));
     }
   }
+  for (const auto &lead : BuildStoryLeads(state))
+    if (const auto *stellar = state.scenario.Stellar(lead.stellar_id))
+      append_unique(stellar->system_id);
   return out;
 }
 

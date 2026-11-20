@@ -1637,7 +1637,7 @@ void FoldShipDefaultLoadoutMass(ScenarioData &data) {
   }
 }
 
-// @port 0x004BD3C0 68% gameplay
+// @port 0x004BD3C0 68% gameplay,divergence
 // @port 0x004AEDA0 100%
 // Ghidra 0x004bd3c0 NovaData_LoadScenarioResourceTables and 0x004aeda0
 // NovaData_LoadAllShipClassVisualAndLaunchData: both scenario table loaders
@@ -2240,6 +2240,8 @@ bool ScenarioData::LoadFromArchives(std::mt19937 *variant_rng,
       // NameString_StripSubtitleSuffix (0x004cd230) before storing it, so the
       // BBS/computer list rows show "Base Name" for "Base Name;Subtitle".
       mission.display_name = NovaText_StripSubtitleSuffix(res->name);
+      // Community journal retains the author subtitle separately from UI text.
+      mission.resource_name = res->name;
       missions[static_cast<std::size_t>(id) - 0x80] = std::move(mission);
       ++loaded_missions;
     }

@@ -79,6 +79,59 @@ the next mission is 149, offered at New England's bar (stellar 138); repeating
 the Merrol freight jobs does not advance that bit. Evidence: shipped mission,
 stellar and system resources; `0x00440410` and `0x00459950` decompilation.
 
+## Community story journal
+
+`story_journal.cpp` derives read-only leads from the loaded mission resources
+and current pilot state. The full mission window (I), floating tracker, galaxy
+map and System Markets share those leads. The journal opens even with no
+accepted assignments. Known ordinary ports support the existing Auto Pilot;
+unknown, hidden and government-wide locations remain clues rather than an
+invented destination. The description can be scrolled with the mouse wheel.
+
+This is a community presentation enhancement, not a change to original story
+scripts or offer rules. It allocates no active-mission slot and writes no pilot
+bits, reputation, deadlines, cargo or RNG state. Accepting a real story mission
+replaces its inferred lead; completing it recalculates the next clue. A lead
+cannot be aborted and grants no docking clearance. At a blocked port it explains
+hailing/negotiation or legal standing; Auto Pilot stops rather than paying a
+bribe or repeatedly trying to dock. Already docked at the lead's port, its
+button explains that the player should follow the clue there.
+
+The inference is shared by all campaigns and plugin resources, including ARPIA2:
+
+- A progress-gated availability expression must pass (or pass after the stock
+  b6666 daily delay). The same expression must fail with no story control bits,
+  preventing unrelated starting offers from filling a new pilot's journal.
+- OnAccept, OnSuccess or OnShipDone must change a story bit; explicitly S-linked
+  helper missions are inspected to a bounded depth. Repeat freight/combat jobs
+  with no story progression do not hide the next contact. Scripts are inspected,
+  never executed by the journal.
+- Resource-name subtitles group numbered chapters; the furthest currently
+  eligible chapter supplies the next clue per family. Unannotated plugin
+  missions retain individual cautious leads. These author annotations are
+  heuristics, not a newly reconstructed original quest-log format.
+- Clues use the offer location/service, not an unaccepted mission's title,
+  briefing, reward or future objective. Cargo, combat/record gates, delayed
+  contacts and visit randomness are explained. Ship-origin contacts and hidden
+  destinations cannot be turned into docking orders.
+- Exact-name stock destinationless Vell-os reminders 818/819 are suppressed in
+  the journal when a current Vell-os lead replaces them; their real mission
+  slots and scripts are retained. Other accepted missions keep their original
+  visibility rules.
+
+The Merrol gap after mission 149 illustrates the change: OnAccept removes
+reminder 819, OnSuccess sets b359 and clears b358 without restoring a reminder.
+Mission 193 is then offered at Merrol's bar with a 50% arrival roll and a one-ton
+cargo gate. A persistent lead points back to that bar and explains another visit
+when the contact is absent. It does not force the offer or reveal its plot.
+
+Validation covers representative handoffs from all six main campaigns (both
+Rebel branches), side stories, delayed contacts, ship-goal/cleared-bit progress,
+plugin-style metadata, navigation identity and hostile docking. The driver uses
+a copied pilot with zero active missions. This is not a complete playthrough of
+every stock or third-party storyline; arbitrary plugin scripts or nonstandard
+chapter labels can require more specific inference.
+
 ## Random mission destination validity (0x00468b50)
 
 A randomly selected destination must satisfy the Bible rule: far enough from the

@@ -5,6 +5,7 @@
 #include "outfit.hpp"
 #include "scenario_data.hpp"
 #include "ship_ai.hpp"
+#include "story_journal.hpp"
 #include "travel.hpp"
 #include "weapon.hpp"
 
@@ -365,6 +366,17 @@ std::string ProbeState_Snapshot(const GameState &state,
       rows.raw(row.done());
     }
     j.array("missions", rows.done());
+    JsonArr leads;
+    for (const auto &lead : BuildStoryLeads(state)) {
+      Json row;
+      row.num("row", lead.row);
+      row.num("stellar_id", lead.stellar_id);
+      row.str("title", lead.title);
+      row.str("summary", lead.summary);
+      row.str("description", lead.description);
+      leads.raw(row.done());
+    }
+    j.array("story_leads", leads.done());
     return j.done();
   }
 

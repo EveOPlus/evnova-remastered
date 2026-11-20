@@ -1,10 +1,13 @@
 #include "brgr_archive.hpp"
+#include "game/mission.hpp"
 #include "game/movie_player.hpp"
+#include "game/story_journal.hpp"
 #include "nova_paths.hpp"
 #include "pict_image.hpp"
 #include "sdl_platform.hpp"
 #include "third_party/pl_mpeg.h"
 #include "util/byte_reader.hpp"
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <filesystem>
 #include <fstream>
@@ -38,6 +41,23 @@ TEST_CASE("ARPIA2 complete pack loads and decodes its media",
   CHECK(image->height > 400);
   CHECK(NovaResource_Load(0x6d95736e, 919).has_value());
   CHECK(NovaResource_Load(0x6f9f7466, 457).has_value());
+  // Real plugin chapter handoff, with no accepted assignment or stock-only IDs.
+  game::GameState story;
+  REQUIRE(story.scenario.LoadFromArchives());
+  story.control.SetControlBit(860, true);
+  game::NovaResources_EvaluateAvailability(story);
+  auto leads = game::BuildStoryLeads(story);
+  const auto has_contact = [&](std::int16_t port) {
+    return std::any_of(leads.begin(), leads.end(), [port](const auto &lead) {
+      return lead.title == "Arpia: story lead" && lead.stellar_id == port;
+    });
+  };
+  CHECK(has_contact(128));
+  story.control.SetControlBit(861, true);
+  game::NovaResources_EvaluateAvailability(story);
+  leads = game::BuildStoryLeads(story);
+  CHECK_FALSE(has_contact(128));
+  CHECK(has_contact(137));
   for (const auto *name : {"gasminer.mov", "credits.mov"}) {
     const auto path = NovaResource_LocateFile(std::string(name) + ".mpg");
     REQUIRE(path);

@@ -18,6 +18,7 @@ namespace game {
 
 std::vector<SystemMarket> BuildSystemMarkets(const GameState &state) {
   std::vector<SystemMarket> result;
+  const auto story_leads = BuildStoryLeads(state);
   const auto *system = state.scenario.System(
       static_cast<std::int16_t>(state.player.current_system_id + 0x80));
   if (!system)
@@ -44,6 +45,9 @@ std::vector<SystemMarket> BuildSystemMarkets(const GameState &state) {
               static_cast<std::int16_t>(id - 0x80)))
         ++market.mission_count;
     }
+    for (const auto &lead : story_leads)
+      if (lead.stellar_id == id)
+        ++market.mission_count;
     if (!market.has_market) {
       if (market.mission_count == 0)
         continue;

@@ -476,14 +476,7 @@ MissionDestinationPreselect(const GameState &state,
 // mission-computer sub-window on this count (0x0043c470 action 10, 0x00442510
 // action 7, and the in-flight command 0x28).
 [[nodiscard]] bool HasVisibleActiveMission(const GameState &state) {
-  for (std::size_t slot = 0; slot < state.active_mission_runtime_flags.size();
-       ++slot) {
-    const auto &flags = state.active_mission_runtime_flags[slot];
-    if (flags.is_active && (flags.flags_primary_at_accept & 0x400) == 0U) {
-      return true;
-    }
-  }
-  return false;
+  return !MissionJournalRows(state).empty();
 }
 
 } // namespace
@@ -1564,20 +1557,23 @@ struct MissionInfoLayout {
   return layout;
 }
 
-// @port 0x00445DC0 85% ui,rendering
+// @port 0x00445DC0 85% ui,rendering,divergence
 // Ghidra 0x00445dc0 NovaUi_RebuildSpecialInteractionList (mission-info arm):
 // rows are the active missions whose flags_at_accept lack the 0x400
-// "invisible in the mission info dialog" bit, in slot order. Each row is the
-// failed marker (DAT_0056c328: byte 0xa5 + space, which the original's text
-// renderer draws as-is) plus the mission title (the misn resource name,
-// wildcard-expanded through the active arm of 0x004444f0).
+// "invisible in the mission info dialog" bit, in slot order.
+// Community divergence: inferred story leads precede the accepted assignments.
+// Each row is the failed marker (DAT_0056c328: byte 0xa5 + space, which the
+// original's text renderer draws as-is) plus the mission title (the misn
+// resource name, wildcard-expanded through the active arm of 0x004444f0).
 [[nodiscard]] std::vector<MissionInfoRow>
 BuildMissionInfoRows(const GameState &state) {
   std::vector<MissionInfoRow> rows;
+  for (const auto &lead : BuildStoryLeads(state))
+    rows.push_back({lead.row, lead.title, false});
   for (std::size_t slot = 0; slot < state.active_missions.size(); ++slot) {
     const auto &flags = state.active_mission_runtime_flags[slot];
     const auto &mission = state.active_missions[slot];
-    if (!flags.is_active || (flags.flags_primary_at_accept & 0x400) != 0U) {
+    if (!MissionJournalShowsActiveSlot(state, slot)) {
       continue;
     }
     MissionInfoRow row;
@@ -1604,6 +1600,8 @@ BuildMissionInfoRows(const GameState &state) {
 // Resource + Stellar_BuildTravelDestinationDescription 0x004444f0).
 [[nodiscard]] std::string BuildMissionInfoDescription(const GameState &state,
                                                       std::int16_t slot) {
+  if (const auto lead = FindStoryLead(state, slot))
+    return lead->description;
   if (slot < 0 ||
       static_cast<std::size_t>(slot) >= state.active_missions.size() ||
       !state.active_mission_runtime_flags[static_cast<std::size_t>(slot)]
@@ -1631,6 +1629,7 @@ BuildMissionInfoRows(const GameState &state) {
 // DIVERGENCE(original): wheel input scrolls the active mission list through
 // the existing scrollbar's clamped row offset. Auto Pilot queues a visible
 // mission destination for normal launch, route following and docking.
+// Read-only story leads and scrollable descriptions extend the journal.
 // Ghidra 0x00446150 NovaUi_RunMissionComputerWindow (the gameplay command
 // 0x28 window, default key I). Modal over the flight scene: the active-
 // mission list (0x00445dc0 NovaUi_RebuildMissionComputerList), the selected
@@ -1730,6 +1729,9 @@ void NovaMission_RunMissionInfoWindow(
                           state, rows[static_cast<std::size_t>(selected)].slot)
                     : std::string();
   std::string autopilot_error;
+  int description_scroll = 0;
+  int description_scroll_max = 0;
+  evnova::util::ScrollWheelSteps description_wheel;
 
   constexpr SDL_Color kText{255, 255, 255, 255};
   constexpr SDL_Color kPanelBlack{0, 0, 0, 255};
@@ -1790,10 +1792,7 @@ void NovaMission_RunMissionInfoWindow(
       SDL_RenderRect(renderer, &layout->frame);
     }
 
-    const std::string heading =
-        // STR# 0x7d2 1-based entry 0x168, "Currently active missions:".
-        NovaHud_LoadStringEntry(0x7d2, 0x168)
-            .value_or("Currently active missions:");
+    const std::string heading = "Missions and story leads:";
     // Cursor set to the entry-3 rect top-left; the baseline lands at
     // rect.top + the scaled font size (9).
     NovaText_Draw(platform,
@@ -1880,8 +1879,21 @@ void NovaMission_RunMissionInfoWindow(
       SDL_SetRenderClipRect(renderer, &desc_clip);
       const float line_pitch = static_cast<float>(
           font_cache.LineHeight(NovaFontFamily::kGeneva, kMissionInfoFontSize));
+      const int visible_lines = std::max(
+          1,
+          static_cast<int>((layout->description.h - kMissionInfoFontSize) /
+                           line_pitch) +
+              1);
+      description_scroll_max =
+          std::max(0, static_cast<int>(lines.size()) - visible_lines);
+      description_scroll =
+          std::clamp(description_scroll, 0, description_scroll_max);
       float y = layout->description.y + kMissionInfoFontSize;
-      for (const auto &line : lines) {
+      for (std::size_t line_index =
+               static_cast<std::size_t>(description_scroll);
+           line_index < lines.size();
+           ++line_index) {
+        const auto &line = lines[line_index];
         if (y > layout->description.y + layout->description.h) {
           break;
         }
@@ -1904,10 +1916,11 @@ void NovaMission_RunMissionInfoWindow(
     // the CanAbort latch (NovaUi_DrawTravelDestinationServicesButtons-style
     // grey art in the original's FUN_004a1520).
     const bool abort_enabled =
-        selected >= 0 && state
-                             .active_missions[static_cast<std::size_t>(
-                                 rows[static_cast<std::size_t>(selected)].slot)]
-                             .can_abort;
+        selected >= 0 && rows[static_cast<std::size_t>(selected)].slot >= 0 &&
+        state
+            .active_missions[static_cast<std::size_t>(
+                rows[static_cast<std::size_t>(selected)].slot)]
+            .can_abort;
     button_art.Draw(platform,
                     layout->abort_button,
                     abort_enabled ? ButtonState::kNormal
@@ -1936,6 +1949,8 @@ void NovaMission_RunMissionInfoWindow(
     else if (destination)
       hint = "Launch, fly and dock at " +
              state.scenario.Stellar(destination->stellar_id)->name + ".";
+    if (description_scroll_max > 0)
+      hint += " Scroll the description for more.";
     if (!autopilot_error.empty())
       hint = autopilot_error;
     SDL_SetRenderDrawColor(renderer, 16, 32, 48, SDL_ALPHA_OPAQUE);
@@ -1989,6 +2004,8 @@ void NovaMission_RunMissionInfoWindow(
       return;
     }
     const auto slot = rows[static_cast<std::size_t>(selected)].slot;
+    if (slot < 0)
+      return;
     const auto &mission = state.active_missions[static_cast<std::size_t>(slot)];
     if (!mission.can_abort) {
       return;
@@ -2041,12 +2058,18 @@ void NovaMission_RunMissionInfoWindow(
   const auto open_starmap = [&]() {
     std::int16_t preselect = -1;
     if (selected >= 0) {
-      const auto &mission = state.active_missions[static_cast<std::size_t>(
-          rows[static_cast<std::size_t>(selected)].slot)];
-      preselect = MissionDestinationPreselect(state,
-                                              mission.flags_primary,
-                                              mission.travel_stellar_id,
-                                              mission.return_stellar_id);
+      const auto slot = rows[static_cast<std::size_t>(selected)].slot;
+      if (const auto lead = FindStoryLead(state, slot)) {
+        if (const auto *stellar = state.scenario.Stellar(lead->stellar_id))
+          preselect = stellar->system_id;
+      } else if (slot >= 0) {
+        const auto &mission =
+            state.active_missions[static_cast<std::size_t>(slot)];
+        preselect = MissionDestinationPreselect(state,
+                                                mission.flags_primary,
+                                                mission.travel_stellar_id,
+                                                mission.return_stellar_id);
+      }
     }
     if (RunNestedMissionStarmap(platform, state, preselect)) {
       exit_requested = true;
@@ -2070,6 +2093,14 @@ void NovaMission_RunMissionInfoWindow(
       // @port 0x00446770 65% ui
       // PollSpecialInteractionWindow (0x00446770): Enter/Esc/I close, arrows
       // move the selection; the map command is polled above the loop.
+      if (input->key == TextKey::wheel &&
+          Contains(layout->description, platform.mouse_position())) {
+        description_scroll = std::clamp(
+            description_scroll - 3 * description_wheel.Consume(input->wheel_y),
+            0,
+            description_scroll_max);
+        continue;
+      }
       if (input->key == TextKey::wheel &&
           (Contains(layout->list, platform.mouse_position()) ||
            Contains(info_scrollbar, platform.mouse_position()))) {
@@ -2100,6 +2131,7 @@ void NovaMission_RunMissionInfoWindow(
             selected = 0;
           }
           list_control.EnsureVisible(static_cast<std::size_t>(selected));
+          description_scroll = 0;
           description = BuildMissionInfoDescription(
               state, rows[static_cast<std::size_t>(selected)].slot);
         };
@@ -2149,6 +2181,7 @@ void NovaMission_RunMissionInfoWindow(
           if (new_selected != selected) {
             autopilot_error.clear();
             selected = new_selected;
+            description_scroll = 0;
             description =
                 selected >= 0
                     ? BuildMissionInfoDescription(

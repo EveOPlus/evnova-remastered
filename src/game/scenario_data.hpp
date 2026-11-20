@@ -229,6 +229,8 @@ struct MissionDef {
   // MisnDef +0x128, loaded from mïsn payload +0x7a0. Lower values sort first.
   std::int16_t list_priority = 0;
   std::string display_name;
+  std::string
+      resource_name; // Author subtitle retained for community story leads.
   std::array<std::byte, 0x7b2> raw_payload{};
 };
 

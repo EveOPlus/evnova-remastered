@@ -241,7 +241,7 @@ address	name	impl_file	reimpl_pct	comment
 0x00443C60	Mission_HandleMissionOrSurrenderShipReaction	src/game/mission.cpp	97%	correctness
 0x004444F0	Stellar_BuildTravelDestinationDescription	src/game/mission_text.cpp	80%	gameplay,ui,bugfix
 0x00445D70	Mission_ReplaceSubstringInMissionText	src/game/mission_text.cpp	100%	
-0x00445DC0	NovaUi_RebuildMissionComputerList	src/game/docked_mission_dialog.cpp	85%	ui,rendering
+0x00445DC0	NovaUi_RebuildMissionComputerList	src/game/docked_mission_dialog.cpp	85%	ui,rendering,divergence
 0x00446150	NovaUi_RunMissionComputerWindow	src/game/docked_mission_dialog.cpp	88%	ui,rendering,divergence
 0x00446770	NovaUi_PollMissionComputerWindow	src/game/docked_mission_dialog.cpp	65%	ui
 0x00446E00	NovaUi_DrawMissionComputerWindow	src/game/docked_mission_dialog.cpp	70%	ui,rendering
@@ -862,7 +862,7 @@ address	name	impl_file	reimpl_pct	comment
 0x004BD090	FUN_004bd090		0%	
 0x004BD0C0	Prefs_SetPilotsPathPrefix		0%	Builds the "Pilots:" prefix from EVNova.ini [130] S3. Former Ghidra name Prefs_SetNovaFilesPathPrefix was wrong. Unported; the port resolves a "Pilots" child of the per-user support folder (src/nova_paths.cpp, used by src/game/pilot_file.cpp PilotFileSaveDirectory).
 0x004BD160	Resource_ValidateInstallFolders	src/brgr_archive.cpp	40%	correctness
-0x004BD3C0	NovaData_LoadScenarioResourceTables	src/game/scenario_data.cpp	68%	gameplay
+0x004BD3C0	NovaData_LoadScenarioResourceTables	src/game/scenario_data.cpp	68%	gameplay,divergence
 0x004C6D50	Ui_LoadSelectionDialogResource		0%	
 0x004C7040	NovaData_LoadDisplayNamePstringTables	src/game/hud_overlay.cpp	95%	ui
 0x004C73B0	NovaResources_CopyStringResource	src/game/hud_overlay.cpp	100%	

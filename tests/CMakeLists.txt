@@ -29,6 +29,7 @@ add_executable(evnova_tests
     mouse_controls_test.cpp
     negotiation_test.cpp
     mission_test.cpp
+    story_journal_test.cpp
     mission_script_test.cpp
     new_pilot_dialog_test.cpp
     nova_command_test.cpp

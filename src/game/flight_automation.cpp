@@ -579,7 +579,11 @@ bool FlightAutomationController::MissionAutopilot(
   Cancel();
   if (!MissionAutopilotStillValid(state, request) ||
       NovaAiShip_IsDisabled(state, state.player)) {
-    Fail("Mission autopilot stopped: mission changed or ship disabled.");
+    std::string reason;
+    (void)MissionAutopilotDestination(state, request.slot, reason);
+    Fail(reason.empty()
+             ? "Mission autopilot stopped: mission changed or ship disabled."
+             : reason);
     return false;
   }
   const auto *stellar = state.scenario.Stellar(request.stellar_id);
@@ -1191,7 +1195,11 @@ void FlightAutomationController::Tick(const GameState &state,
   }
   if (mission_ && (!MissionAutopilotStillValid(state, *mission_) ||
                    NovaAiShip_IsDisabled(state, state.player))) {
-    Fail("Mission autopilot stopped: mission changed or ship disabled.");
+    std::string reason;
+    (void)MissionAutopilotDestination(state, mission_->slot, reason);
+    Fail(reason.empty()
+             ? "Mission autopilot stopped: mission changed or ship disabled."
+             : reason);
     return;
   }
   if (now_ms > deadline_ms_) {

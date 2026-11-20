@@ -3,6 +3,8 @@
 #include "game_state.hpp"
 #include "ship_ai.hpp"
 #include "starmap_route.hpp"
+#include "story_journal.hpp"
+#include "travel.hpp"
 
 #include <string>
 
@@ -33,6 +35,24 @@ MissionDestinationStellar(const GameState &state,
 inline std::optional<MissionAutopilotRequest> MissionAutopilotDestination(
     const GameState &state, std::int16_t slot, std::string &reason) {
   reason.clear();
+  if (slot < -1) {
+    const auto lead = FindStoryLead(state, slot);
+    const auto *stellar =
+        lead ? state.scenario.Stellar(lead->stellar_id) : nullptr;
+    if (!stellar || (stellar->flags & 0x20U) != 0 ||
+        (stellar->availability_flags & 0x3000U) != 0) {
+      reason = "Follow this story clue; no exact docking destination is known.";
+      return std::nullopt;
+    }
+    if (stellar->system_id == state.player.current_system_id &&
+        !NovaTravel_PlayerMeetsStellarAccess(state, lead->stellar_id)) {
+      reason = "Clearance needed: hail " + stellar->name +
+               " or improve local standing.";
+      return std::nullopt;
+    }
+    return MissionAutopilotRequest{
+        slot, static_cast<std::int16_t>(-slot - 2), lead->stellar_id};
+  }
   if (slot < 0 ||
       static_cast<std::size_t>(slot) >= state.active_missions.size()) {
     reason = "Select an active mission.";
@@ -83,6 +103,11 @@ inline bool QueueMissionAutopilot(GameState &state,
   if (stellar->system_id != state.player.current_system_id &&
       !FindShortestStarmapRoute(state, stellar->system_id)) {
     reason = "No known route to this mission's destination.";
+    return false;
+  }
+  if (slot < -1 && !state.in_flight &&
+      state.last_offer_list_stellar == request->stellar_id) {
+    reason = "You are already here. Follow the clue at this port.";
     return false;
   }
   state.pending_mission_autopilot = request;

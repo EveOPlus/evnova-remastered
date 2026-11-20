@@ -14,12 +14,7 @@ constexpr float kWidth = 264, kRowHeight = 32;
 constexpr int kVisibleRows = 4;
 
 std::vector<std::int16_t> VisibleMissions(GameState &state) {
-  std::vector<std::int16_t> rows;
-  for (std::size_t slot = 0; slot < state.active_missions.size(); ++slot) {
-    const auto &flags = state.active_mission_runtime_flags[slot];
-    if (flags.is_active && (flags.flags_primary_at_accept & 0x400U) == 0)
-      rows.push_back(static_cast<std::int16_t>(slot));
-  }
+  const auto rows = MissionJournalRows(state);
   auto &panel = state.mission_panel;
   if (std::find(rows.begin(), rows.end(), panel.selected) == rows.end())
     panel.selected = rows.empty() ? -1 : rows.front();
@@ -183,9 +178,11 @@ void MissionPanel::Draw(SdlPlatform &platform, GameState &state) {
     if (index >= rows.size())
       break;
     const auto slot = rows[index];
-    const auto &mission = state.active_missions[static_cast<std::size_t>(slot)];
-    const auto &flags =
-        state.active_mission_runtime_flags[static_cast<std::size_t>(slot)];
+    const auto lead = FindStoryLead(state, slot);
+    const bool failed =
+        slot >= 0 &&
+        state.active_mission_runtime_flags[static_cast<std::size_t>(slot)]
+            .is_failed;
     const SDL_FRect row{rects.list.x,
                         rects.list.y + static_cast<float>(visible) * kRowHeight,
                         rects.list.w,
@@ -193,12 +190,15 @@ void MissionPanel::Draw(SdlPlatform &platform, GameState &state) {
     SDL_SetRenderDrawColor(
         renderer, panel.selected == slot ? 76 : 12, 20, 29, 255);
     SDL_RenderFillRect(renderer, &row);
-    const auto *definition = state.scenario.Mission(
-        static_cast<std::int16_t>(mission.mission_template_id + 0x80));
-    const auto title = definition
-                           ? Mission_ExpandMissionWildcards(
-                                 state, definition->display_name, false, slot)
-                           : "Mission";
+    std::string title = lead ? lead->title : "Mission";
+    if (slot >= 0) {
+      const auto &mission =
+          state.active_missions[static_cast<std::size_t>(slot)];
+      if (const auto *definition = state.scenario.Mission(
+              static_cast<std::int16_t>(mission.mission_template_id + 0x80)))
+        title = Mission_ExpandMissionWildcards(
+            state, definition->display_name, false, slot);
+    }
     const auto icon = AutoPilotIcon(row);
     const SDL_FRect caption{row.x, row.y, icon.x - row.x - 3, row.h};
     {
@@ -214,8 +214,10 @@ void MissionPanel::Draw(SdlPlatform &platform, GameState &state) {
                     title);
       std::string reason;
       const auto destination = MissionAutopilotDestination(state, slot, reason);
-      std::string where = flags.is_failed ? "Failed" : "No docking destination";
-      if (destination) {
+      std::string where = lead     ? lead->summary
+                          : failed ? "Failed"
+                                   : "No docking destination";
+      if (destination && !lead) {
         const auto *stellar = state.scenario.Stellar(destination->stellar_id);
         const auto *system = state.scenario.System(
             static_cast<std::int16_t>(stellar->system_id + 0x80));
@@ -263,12 +265,13 @@ void MissionPanel::Draw(SdlPlatform &platform, GameState &state) {
     controls.emplace_back("missions.row." + std::to_string(slot),
                           placement.ToWindowRect(row));
   }
-  const std::string hint = !notice_.empty() ? notice_
-                           : hover_autopilot
-                               ? "Auto Pilot: fly to this mission and dock"
-                           : rows.size() > kVisibleRows
-                               ? "Scroll for more missions"
-                               : "Use the arrow beside a mission to fly there";
+  const std::string hint =
+      !notice_.empty()      ? notice_
+      : hover_autopilot     ? "Auto Pilot: fly to this mission and dock"
+      : panel.selected < -1 ? "Story clue: press I for details"
+      : rows.size() > kVisibleRows
+          ? "Scroll for more missions"
+          : "Use the arrow beside a mission to fly there";
   const SDL_FRect hint_box{8, rects.list.y + rects.list.h + 5, kWidth - 16, 28};
   const evnova::util::RenderClipScope clip(renderer, hint_box);
   // Two short lines keep feedback readable without making the tracker wider.

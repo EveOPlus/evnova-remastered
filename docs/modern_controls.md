@@ -218,3 +218,12 @@ It updates destinations and removes completed missions automatically, and can
 remain open beside the floating map. Hovering an arrow identifies its action.
 The panel size follows its visible rows
 (up to four); the normal mission window remains available for full briefings.
+
+### Story leads between missions
+
+Press **I** to see current assignments and story leads, including when no formal
+mission is active. Leads name the contact's port/service or a broader search
+area, explain delayed appearances and blocked docking, and update as the story
+advances. Scroll the description for longer clues. **Pop Out** keeps them in the
+compact tracker; the small arrow uses normal Auto Pilot for a known accessible
+port. A lead itself does not grant docking clearance or force a mission offer.

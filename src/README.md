@@ -49,7 +49,7 @@ distinct and are often intentionally retained from the binary.
 | Landing, stores and trade | `game/landed_*`, `docked_*`, `trade_center.*`, `system_markets.*` | [Trade](../docs/trade_center.md) |
 | Bar, hire and gambling | `game/docked_bar_dialog.cpp`, `bar_gambling.*` | [Bar/racing](../docs/escort_hiring_and_bar.md) |
 | Boarding and capture | `game/boarding_plunder.*`, `flight_automation.*` | [Boarding](../docs/boarding_plunder_capture.md) |
-| Missions and scripts | `game/mission*`, `docked_mission_dialog.cpp`, `mission_panel.*` | [Missions](../docs/mission_reimplementation_overview.md) |
+| Missions and scripts | `game/mission*`, `docked_mission_dialog.cpp`, `mission_panel.*`, `story_journal.*` | [Missions](../docs/mission_reimplementation_overview.md) |
 | Government, ranks and encounters | `game/government.*`, `rank.*`, `ship_spawn.*` | [Factions](../docs/faction_combat_and_ranks.md) |
 | Save/restore and ship exchange | `game/pilot_file.*`, `new_pilot_flow.*`, `outfit.*`, `player_info_window.*` | [Pilot format](../docs/pilot_save_file_format.md), [ship swap](../docs/player_ship_swap.md) |
 | Dialogs and text | `game/ui_dialog.*`, `nova_font.*`, `nova_list_control.*`, `selection_text_dialog.*`, `preferences_ui.hpp` | [DLOG/DITL](../docs/dlog_ditl_dialog_format.md) |
