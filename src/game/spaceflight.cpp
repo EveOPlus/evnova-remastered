@@ -2158,6 +2158,8 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
         }
       } else if (action == RadialAction::board &&
                  target.kind == MouseTargetKind::ship) {
+        mouse_control.Cancel();
+        state.command_latches.board_was_held = false;
         (void)automation.BoardTarget(
             state, target.id, platform.gameplay_ticks_ms());
         NovaHud_ShowOverlayMessage(state, automation.status().detail);
