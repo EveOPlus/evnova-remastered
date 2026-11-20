@@ -1335,6 +1335,15 @@ struct PlayerCommandLatches {
   std::int16_t prev_travel_stellar = -1;
 };
 
+// Transient community command, never serialized into the original pilot format.
+// Identity prevents a replaced/failed mission slot from sending the ship
+// elsewhere.
+struct MissionAutopilotRequest {
+  std::int16_t slot = -1;
+  std::int16_t mission_template_id = -1;
+  std::int16_t stellar_id = -1;
+};
+
 // Everything about the running pilot's world. Replaces the Game_Reset* set of
 // globals for the transient not-yet-reconstructed subsystems with explicit
 // flags so we can log exactly what is and is not preserved.
@@ -1345,6 +1354,7 @@ struct PlayerCommandLatches {
 // subsystem instead.
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 struct GameState {
+  std::optional<MissionAutopilotRequest> pending_mission_autopilot;
   // Size of the original global ship array `g_ship_states` (0x40 slots).
   // Index 0 is the player; the remaining slots hold NPC ships.
   static constexpr std::size_t kMaxShips = 0x40;
@@ -1441,6 +1451,13 @@ struct GameState {
     float zoom = .75F, pan_x = 0, pan_y = 0;
     std::int16_t selected = -1, centered_system = -1;
   } navigation_panel;
+
+  struct {
+    bool visible = false;
+    float x = 700, y = 80;
+    std::int16_t selected = -1;
+    int scroll = 0;
+  } mission_panel;
 
   // Galaxy starmap view state (Ghidra g_starmap_zoom 0x005759d8,
   // g_starmap_pan_origin_x/y 0x005997b4). Zoom is a world->screen DIVISOR

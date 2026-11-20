@@ -254,5 +254,14 @@
         }
       ]
     }
+  },
+  "graphics": {
+    "id": "original-4x-v1",
+    "url": "https://github.com/EveOPlus/evnova-remastered/releases/download/v1.0.1/evnova-graphics-original-4x-v1.zip",
+    "archive": "evnova-graphics-original-4x-v1.zip",
+    "size": 555343758,
+    "sha256": "f57e7dea978255a2d5da88c6b737631b0285169cf2c161512e0f3fd49b59c523",
+    "file_count": 8193,
+    "expanded_bytes": 554285004
   }
 }

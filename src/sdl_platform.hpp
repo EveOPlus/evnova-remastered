@@ -376,6 +376,11 @@ public:
 
   void ClearProbeUi() { probe_.ClearUi(); }
 
+  void PublishProbeOverlay(std::string name,
+                           std::vector<ProbeNamedRect> entries) {
+    probe_.PublishOverlayUi(std::move(name), std::move(entries));
+  }
+
   // The full window size in logical draw coordinates. World/spaceflight
   // drawing queries this to extend to the
   // (possibly larger) window; it is independent of whether fixed screens are

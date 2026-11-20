@@ -114,3 +114,11 @@ The narration panel also publishes `voice.install`. `state narration` reports
 an `installed` boolean for each of the four displayed voices and `installing`.
 The install continues in the background when settings close. Use an isolated
 profile to test the installation without touching the player's runtime.
+
+
+The active mission window publishes `auto_pilot` and `pop_out`. The floating
+tracker appends `missions.title`, `missions.close`, `missions.list`,
+`missions.row.<slot>` and `missions.auto_pilot.<slot>` (with `missions.auto_pilot`
+as an alias for the selected row) to the current flight/map/port
+surface. `PublishOverlayUi` replaces only its own prefixed controls so the map
+and station remain testable. The panel updates live as mission slots change.

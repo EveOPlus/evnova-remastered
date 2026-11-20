@@ -1,5 +1,6 @@
 #include "landed_window.hpp"
 #include "mission.hpp"
+#include "mission_panel.hpp"
 #include "movie_player.hpp"
 
 #include "../brgr_archive.hpp"
@@ -7,6 +8,7 @@
 #include "../pict_image.hpp"
 #include "../sdl_platform.hpp"
 #include "asteroid.hpp"
+#include "command_input.hpp"
 #include "docked_dialog.hpp"
 #include "escort_formation.hpp"
 #include "hud_overlay.hpp"
@@ -1182,12 +1184,9 @@ LandedExit DispatchService(SdlPlatform &platform,
                                       ctx.selection,
                                       ctx.stellar_id,
                                       render_background);
-    if (dialog_exit == LandedExit::kQuit) {
-      return LandedExit::kQuit;
-    }
-    // Otherwise the dialog closed back to the dock menu normally. No service
-    // currently hands a launch back to the dock loop; a future service-
-    // internal "launch" path would return kLaunched here.
+    if (dialog_exit == LandedExit::kQuit ||
+        dialog_exit == LandedExit::kLaunched)
+      return dialog_exit;
     return LandedExit::kServiceComplete;
   }
 
@@ -1202,7 +1201,9 @@ LandedExit DispatchService(SdlPlatform &platform,
 // ---------------------------------------------------------------------------
 // Landed window modal run loop.
 // ---------------------------------------------------------------------------
-// @port 0x00491f30 60% ui
+// @port 0x00491f30 60% ui,divergence
+// DIVERGENCE(original): I opens active missions here and Auto Pilot requests
+// the normal launch tail before starting its route and docking assistance.
 // TODO(decomp): partial clean-room equivalent in NovaLanded_RunWindow:
 // Spaceport presentation, landing mission reaction/offer ordering, service
 // input and dispatch, and return to flight. The stellar CustSndID ambient slice
@@ -1465,6 +1466,16 @@ LandedExit NovaLanded_RunWindow(SdlPlatform &platform,
   }
 
   bool entered_sub_screen = false;
+  MissionPanel mission_panel;
+  const auto panel_pointer_input = [&] {
+    FlightInput input;
+    const auto point =
+        platform.current_placement().ToWindow(platform.mouse_position());
+    input.window_mouse_x = point.x;
+    input.window_mouse_y = point.y;
+    input.primary_held = platform.PrimaryMouseDown();
+    return input;
+  };
 
   // Re-renders the docked menu each frame: sub-dialogs (BBS, stores, offer
   // windows, text readers) layer themselves over this live background instead
@@ -1580,9 +1591,10 @@ LandedExit NovaLanded_RunWindow(SdlPlatform &platform,
   while (!platform.quit_requested()) {
     // Ambient CustSndID retrigger (0x4928a0 callback), once per frame.
     tick_ambient();
+    auto panel_pointer = panel_pointer_input();
+    (void)mission_panel.Update(platform, state, panel_pointer);
     // Nested modals clear their published controls on return. Restore the
     // Spaceport's semantic surface at the same point its root face resumes.
-    publish_probe_controls();
     // Compute the mouse-hovered service (for hover state on the buttons).
     std::optional<std::uint8_t> hovered;
     if (!entered_sub_screen) {
@@ -1616,6 +1628,8 @@ LandedExit NovaLanded_RunWindow(SdlPlatform &platform,
     platform.SetPlacement(PlaceContained({panel.w, panel.h},
                                          platform.logical_playfield_size(),
                                          platform.ui_scale()));
+    publish_probe_controls();
+    mission_panel.Draw(platform, state);
     platform.Present();
 
     // Poll discrete raw keys for the modal (dedicated channel, so it never
@@ -1625,6 +1639,25 @@ LandedExit NovaLanded_RunWindow(SdlPlatform &platform,
     // (0x00491f30): r/f refuel, c/t trade, o outfit, s shipyard, n mission,
     // b bar, Enter/Esc leave. There is no keyboard focus/highlight state.
     for (std::optional<TextInput> in; (in = platform.PollTextEvent());) {
+      if (in->key == TextKey::primary || in->key == TextKey::wheel) {
+        auto pointer_input = panel_pointer_input();
+        pointer_input.primary_clicked = in->key == TextKey::primary;
+        pointer_input.scene_zoom_delta =
+            in->key == TextKey::wheel ? in->wheel_y : 0;
+        if (mission_panel.Update(platform, state, pointer_input)) {
+          if (state.pending_mission_autopilot)
+            return finish(LandedExit::kLaunched);
+          continue;
+        }
+      }
+      if (in->key_code != 0xffff &&
+          in->key_code == NovaInput_CommandKey(0x28)) {
+        NovaMission_RunMissionInfoWindow(
+            platform, audio, state, render_background);
+        if (state.pending_mission_autopilot)
+          return finish(LandedExit::kLaunched);
+        break;
+      }
       if (in->key == TextKey::escape) {
         // Esc leaves a sub-screen back to the menu, or leaves the dock.
         if (entered_sub_screen) {

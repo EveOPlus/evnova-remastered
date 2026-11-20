@@ -49,14 +49,17 @@ struct SetupProcessDeleter {
 
 class DataSetup {
 public:
-  bool Start() {
+  bool Start(bool graphics_only = false) {
 #ifdef _WIN32
-    const auto support = NovaPaths::SupportDirectory();
+    const auto support = graphics_only ? NovaPaths::SharedSupportDirectory()
+                                       : NovaPaths::SupportDirectory();
     if (!support)
       return false;
-    destination = *support / "Game Data";
+    destination = graphics_only ? *NovaPaths::RemasteredPackDestination()
+                                : *support / "Game Data";
     message = "Preparing download...";
-    status_file_ = *support / "game-setup-status.txt";
+    status_file_ = *support / (graphics_only ? "graphics-setup-status.txt"
+                                             : "game-setup-status.txt");
     auto root = std::filesystem::path{SDL_GetBasePath()};
     for (int depth = 0; depth < 6 && !root.empty();
          ++depth, root = root.parent_path()) {
@@ -68,24 +71,27 @@ public:
       const auto destination_arg = destination.string();
       const auto cache_arg = (*support / "Downloads").string();
       const auto status_arg = status_file_.string();
-      const char *args[] = {"powershell.exe",
-                            "-NoProfile",
-                            "-NonInteractive",
-                            "-WindowStyle",
-                            "Hidden",
-                            "-ExecutionPolicy",
-                            "Bypass",
-                            "-File",
-                            script_arg.c_str(),
-                            "-Destination",
-                            destination_arg.c_str(),
-                            "-CacheDirectory",
-                            cache_arg.c_str(),
-                            "-StatusFile",
-                            status_arg.c_str(),
-                            nullptr};
+      std::vector<const char *> args = {"powershell.exe",
+                                        "-NoProfile",
+                                        "-NonInteractive",
+                                        "-WindowStyle",
+                                        "Hidden",
+                                        "-ExecutionPolicy",
+                                        "Bypass",
+                                        "-File",
+                                        script_arg.c_str(),
+                                        "-Destination",
+                                        destination_arg.c_str(),
+                                        "-CacheDirectory",
+                                        cache_arg.c_str(),
+                                        "-StatusFile",
+                                        status_arg.c_str()};
+      if (graphics_only)
+        args.push_back("-GraphicsOnly");
+      args.push_back(nullptr);
       const auto props = SDL_CreateProperties();
-      SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_ARGS_POINTER, args);
+      SDL_SetPointerProperty(
+          props, SDL_PROP_PROCESS_CREATE_ARGS_POINTER, args.data());
       SDL_SetBooleanProperty(
           props, SDL_PROP_PROCESS_CREATE_BACKGROUND_BOOLEAN, true);
       process_.reset(SDL_CreateProcessWithProperties(props));
@@ -94,23 +100,28 @@ public:
         NovaLog::Error("game-data setup could not start: {}", SDL_GetError());
       return process_ != nullptr;
     }
+#else
+    (void)graphics_only;
 #endif
     return false;
   }
 
   bool Poll() {
-    const bool finished = SDL_WaitProcess(process_.get(), false, nullptr);
+    int exit_code = -1;
+    const bool finished = SDL_WaitProcess(process_.get(), false, &exit_code);
     std::string line;
     if (std::getline(std::ifstream(status_file_), line) && !line.empty())
       message = std::move(line);
     if (!finished)
       return false;
+    succeeded = exit_code == 0 && message == "Setup complete.";
     process_.reset();
     return true;
   }
 
   std::filesystem::path destination;
   std::string message = "Preparing download...";
+  bool succeeded = false;
 
 private:
   std::filesystem::path status_file_;
@@ -397,7 +408,7 @@ NovaUi_RunLocateDataDialog(SdlPlatform &platform) {
       downloading = false;
       const auto resolved =
           NovaPaths::ResolveUserSelectedInstallRoot(setup.destination);
-      if (setup.message == "Setup complete." && resolved)
+      if (setup.succeeded && resolved)
         return resolved;
       NovaLog::Error("game-data setup failed: {}", setup.message);
       error_message =
@@ -429,6 +440,129 @@ NovaUi_RunLocateDataDialog(SdlPlatform &platform) {
     platform.PaceFrame();
   }
   return std::nullopt;
+}
+
+bool NovaUi_EnsureRemasteredGraphics(SdlPlatform &platform) {
+#ifdef _WIN32
+  if (NovaPaths::RemasteredPackDirectory())
+    return true;
+  // Source-only builds do not acquire release downloads implicitly.
+  if (!std::filesystem::is_regular_file(
+          std::filesystem::path{SDL_GetBasePath()} / "release.json"))
+    return true;
+  const ProbeUiAutoClear probe_guard(platform);
+  NovaFontCache fonts;
+  const bool fallback_font = UseFallbackFont(fonts);
+  DataSetup setup;
+  bool downloading = setup.Start(true);
+  if (!downloading)
+    setup.message = "Keep the tools folder beside the game, then retry.";
+  const LocateButton retry{{kButtonLeft, 470, kButtonWidth, kButtonHeight},
+                           "Retry download",
+                           LocateButton::Action::download};
+  const LocateButton skip{{kButtonLeft, 540, kButtonWidth, kButtonHeight},
+                          "Continue for now",
+                          LocateButton::Action::locate};
+  while (!platform.quit_requested()) {
+    if (downloading && setup.Poll()) {
+      downloading = false;
+      if (setup.succeeded && NovaPaths::RemasteredPackDirectory())
+        return true;
+      NovaLog::Error("remastered graphics setup failed: {}", setup.message);
+    }
+    const auto placement = PlaceContained({kCanvasWidth, kCanvasHeight},
+                                          platform.logical_playfield_size(),
+                                          platform.ui_scale());
+    platform.SetPlacement(placement);
+    for (std::optional<TextInput> input; (input = platform.PollTextEvent());) {
+      if (input->key == TextKey::escape)
+        return true;
+      if (input->key != TextKey::primary)
+        continue;
+      const auto point = platform.mouse_position();
+      if (evnova::util::Contains(skip.rect, point))
+        return true;
+      if (!downloading && evnova::util::Contains(retry.rect, point))
+        downloading = setup.Start(true);
+    }
+    SDL_SetRenderDrawColor(platform.renderer(), 5, 9, 16, SDL_ALPHA_OPAQUE);
+    SDL_RenderClear(platform.renderer());
+    DrawCenteredLine(platform,
+                     fonts,
+                     fallback_font,
+                     "Remastered ships and planets",
+                     190,
+                     32,
+                     kTitleColor,
+                     true);
+    DrawCenteredLine(platform,
+                     fonts,
+                     fallback_font,
+                     "Installing all 8,188 enhanced artwork frames.",
+                     270,
+                     21,
+                     kBodyColor,
+                     false);
+    DrawCenteredLine(platform,
+                     fonts,
+                     fallback_font,
+                     "One download of about 550 MB, shared by Nova and ARPIA2.",
+                     310,
+                     19,
+                     kBodyColor,
+                     false);
+    DrawCenteredLine(
+        platform,
+        fonts,
+        fallback_font,
+        "The original designs are preserved at four times the resolution.",
+        350,
+        18,
+        kHintColor,
+        false);
+    DrawCenteredLine(platform,
+                     fonts,
+                     fallback_font,
+                     setup.message.substr(0, 85),
+                     416,
+                     18,
+                     downloading ? kBodyColor : kErrorColor,
+                     false);
+    std::vector<ProbeNamedRect> controls;
+    if (!downloading) {
+      DrawButton(platform,
+                 fonts,
+                 fallback_font,
+                 retry,
+                 evnova::util::Contains(retry.rect, platform.mouse_position()),
+                 false);
+      controls.emplace_back("retry", placement.ToWindowRect(retry.rect));
+    }
+    DrawButton(platform,
+               fonts,
+               fallback_font,
+               skip,
+               evnova::util::Contains(skip.rect, platform.mouse_position()),
+               false);
+    controls.emplace_back("continue", placement.ToWindowRect(skip.rect));
+    DrawCenteredLine(
+        platform,
+        fonts,
+        fallback_font,
+        "If you continue now, the download will be offered next launch.",
+        640,
+        17,
+        kHintColor,
+        false);
+    platform.PublishProbeUiItems("graphics_setup", std::move(controls));
+    platform.Present();
+    platform.PaceFrame();
+  }
+  return false;
+#else
+  (void)platform;
+  return true;
+#endif
 }
 
 } // namespace game

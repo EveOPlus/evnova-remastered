@@ -22,8 +22,10 @@ changing that setting. See [ARPIA2](arpia2.md) and [credits](../CREDITS.md).
 
 If FFmpeg is already on PATH, setup also creates MPEG companions for ARPIA2's
 two QuickTime movies. Otherwise it retains the originals; those movies need
-conversion before the SDL player can show them. FFmpeg, narration voices and
-optional enhanced sprite packs are not part of this download. See
+conversion before the SDL player can show them. FFmpeg and narration voices
+remain separate downloads. The enhanced sprite pack installs in a second
+automatic step (about 555 MB) from the pinned GitHub release asset, including
+when you use an existing game-data installation. See
 [narration](narration.md) and [remastered graphics](remastered_graphics.md).
 
 ## Existing installation or offline setup

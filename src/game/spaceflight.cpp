@@ -23,6 +23,8 @@
 #include "landed_store.hpp"
 #include "landed_window.hpp"
 #include "mission.hpp"
+#include "mission_navigation.hpp"
+#include "mission_panel.hpp"
 #include "mission_script.hpp"
 #include "mouse_controls.hpp"
 #include "navigation_panel.hpp"
@@ -1858,6 +1860,7 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
   // marker textures + label font for the whole flight loop).
   RouteMapView route_map_view;
   NavigationPanel navigation_panel;
+  MissionPanel mission_panel;
   route_map_view.Load(platform);
   FlightAutomationController automation;
   bool suppress_jump_until_release = false;
@@ -1909,8 +1912,11 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
     // while the simulation stubs do not, and the same snapshot feeds the
     // travel/jump channel. Movement integrates into PlayerShip.
     FlightInput frame_input = platform.PollFlightInput();
+    const bool mission_pointer =
+        mission_panel.Update(platform, state, frame_input);
     const auto navigation_input =
-        navigation_panel.Update(platform, state, frame_input);
+        mission_pointer ? NavigationPanelInput{}
+                        : navigation_panel.Update(platform, state, frame_input);
     if (navigation_input.changed_route) {
       automation.NavigationChanged(state, host_now_ms);
       jump_key.CancelPending();
@@ -2016,8 +2022,9 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
                              frame_input.window_mouse_y};
     const auto scene_pointer = mouse_geometry.placement.ToAuthored(pointer);
     const bool in_scene =
-        !navigation_input.consumed_pointer && scene_pointer.x >= 0 &&
-        scene_pointer.y >= 0 && scene_pointer.x < mouse_geometry.viewport_w &&
+        !mission_pointer && !navigation_input.consumed_pointer &&
+        scene_pointer.x >= 0 && scene_pointer.y >= 0 &&
+        scene_pointer.x < mouse_geometry.viewport_w &&
         scene_pointer.y < mouse_geometry.viewport_h &&
         !evnova::util::Contains(
             platform.radar_frame_bounds(), pointer.x, pointer.y);
@@ -2263,15 +2270,37 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
         break;
       }
       pending_mouse_action = RadialAction::cancel;
+      // Docked menus queue this across the normal launch tail. Consume it here,
+      // after any previous docking goal was observed and before producing
+      // input.
+      if (state.pending_mission_autopilot) {
+        const auto request = *state.pending_mission_autopilot;
+        state.pending_mission_autopilot.reset();
+        automation.Cancel();
+        mouse_control.Cancel();
+        const auto *destination = state.scenario.Stellar(request.stellar_id);
+        if (MissionAutopilotStillValid(state, request) && destination &&
+            (destination->system_id == state.player.current_system_id ||
+             PlotShortestStarmapRoute(state, destination->system_id))) {
+          (void)automation.MissionAutopilot(state, request, now_ms);
+          NovaHud_ShowOverlayMessage(state, automation.status().detail);
+        } else {
+          NovaHud_ShowOverlayMessage(
+              state,
+              "Mission autopilot stopped: destination or route unavailable.");
+        }
+      }
       const bool was_following_route = automation.FollowingRoute();
       const bool was_mining = automation.Mining();
+      const bool was_flying_mission = automation.FlyingMission();
       const bool was_boarding =
           automation.status().goal == FlightAutomationGoal::kBoard;
-      const auto previous_detail = (was_mining || was_boarding)
-                                       ? automation.status().detail
-                                       : std::string{};
+      const auto previous_detail =
+          (was_mining || was_boarding || was_flying_mission)
+              ? automation.status().detail
+              : std::string{};
       automation.Tick(state, now_ms, input, frame_time_ms / kOriginalTickMs);
-      if ((was_mining || was_boarding) &&
+      if ((was_mining || was_boarding || was_flying_mission) &&
           previous_detail != automation.status().detail)
         NovaHud_ShowOverlayMessage(state, automation.status().detail);
       if (was_following_route && !automation.FollowingRoute())
@@ -3308,6 +3337,7 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
     if (!state.navigation_panel.visible)
       route_map_view.Draw(platform, state);
     navigation_panel.Draw(platform, state);
+    mission_panel.Draw(platform, state);
     platform.Present();
 
     // Ghidra scope 3 "post-draw tasks": pump the primary mouse command; when
@@ -3338,6 +3368,7 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
         host_frame_time_ms * (jump_fade ? kQuickJumpTransitionRate : 1.0F));
     platform.PaceFrame();
   }
+  state.pending_mission_autopilot.reset();
 }
 
 } // namespace

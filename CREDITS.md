@@ -80,8 +80,9 @@ its license section, the extras ReadMe, warning and walkthrough documents.
 
 ARPIA2 also thanks its early players, supporters, testers and community. Its
 ReadMe reserves reproduction rights and asks users to contact the creators
-before reusing graphics. This repository distributes compatibility code, not
-ARPIA2's resources, movies or artwork. The download helper obtains the original
+before reusing graphics. The source repository contains compatibility code. The separately published
+enhanced artwork pack includes derivatives of the original Nova and ARPIA2
+frames, with these original authors' credits retained. The download helper obtains the original
 archive from the user-requested community mirror; it does not relicense it.
 
 ## Libraries shipped as source or linked into the engine
@@ -119,9 +120,9 @@ packaging also collects the notices from the dependencies used for that build.
 - [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN): Xintao Wang and
   contributors (BSD-3-Clause), with
   [Real-ESRGAN-ncnn-vulkan](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan)
-  and [ncnn](https://github.com/Tencent/ncnn) contributors. Used for the local
-  optional sprite enhancement workflow; model binaries and generated game
-  artwork are not included. [Pillow](https://python-pillow.github.io/) supplies
+  and [ncnn](https://github.com/Tencent/ncnn) contributors. Used to generate the four-times-resolution artwork pack
+  distributed as a separate GitHub release asset. Its provenance and
+  Real-ESRGAN license are included in that pack; model binaries are not bundled. [Pillow](https://python-pillow.github.io/) supplies
   image preparation and packing.
 - [FFmpeg](https://ffmpeg.org/): the FFmpeg developers. Used, when installed,
   to create local movie companions. Licensing depends on the selected FFmpeg

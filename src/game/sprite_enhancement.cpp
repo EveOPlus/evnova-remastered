@@ -221,8 +221,8 @@ const EnhancedSpriteTextures *SpriteEnhancementCache::Get(
     return nullptr;
   }
   std::optional<SpriteDetailSource> enhanced;
-  if (const auto root = NovaPaths::InstallRoot()) {
-    enhanced = LoadSpriteDetailPack(*root / "Remastered Sprites", *source);
+  if (const auto root = NovaPaths::RemasteredPackDirectory()) {
+    enhanced = LoadSpriteDetailPack(*root, *source);
     if (enhanced && !logged_pack_) {
       NovaLog::Info(
           "sprite detail pack: using reconstructed 4x original artwork");

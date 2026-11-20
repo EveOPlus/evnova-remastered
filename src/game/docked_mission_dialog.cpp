@@ -15,6 +15,7 @@
 #include "hud_overlay.hpp"
 #include "mission.hpp"
 #include "mission_narration.hpp"
+#include "mission_navigation.hpp"
 #include "mission_script.hpp"
 #include "movie_player.hpp"
 #include "nova_font.hpp"
@@ -489,7 +490,8 @@ MissionDestinationPreselect(const GameState &state,
 
 // @port 0x0043C470 78% ui,gameplay,divergence
 // DIVERGENCE(original): wheel input scrolls the mission list without changing
-// selection, using the native scrollbar's bounded row offset.
+// selection, using the native scrollbar's bounded row offset. A nested active
+// mission Auto Pilot returns through the normal launch path.
 // @port 0x004A1130 70% ui
 // Ghidra 0x004a1130 NovaUi_HitTestMissionBbsActionButtons: the Accept (DITL
 // entry 1) / Leave (entry 7) hit-test runs inline in the mouse arm below.
@@ -803,6 +805,8 @@ LandedExit RunMissionBbsWindow(SdlPlatform &platform,
         HasVisibleActiveMission(state)) {
       NovaMission_RunMissionInfoWindow(
           platform, audio, state, render_background);
+      if (state.pending_mission_autopilot)
+        return LandedExit::kLaunched;
     }
     mission_computer_command_was_held = mission_computer_held;
     platform.PaceFrame();
@@ -1467,7 +1471,7 @@ NovaMission_RunOfferWindow(SdlPlatform &platform,
     if (mission_computer_held && !mission_computer_command_was_held &&
         HasVisibleActiveMission(state)) {
       NovaMission_RunMissionInfoWindow(
-          platform, audio, state, render_background);
+          platform, audio, state, render_background, /*allow_autopilot=*/false);
     }
     mission_computer_command_was_held = mission_computer_held;
     // Hold-to-repeat pump (0x00447170): 1px per 60Hz tick while the button
@@ -1625,7 +1629,8 @@ BuildMissionInfoRows(const GameState &state) {
 
 // @port 0x00446150 88% ui,rendering,divergence
 // DIVERGENCE(original): wheel input scrolls the active mission list through
-// the existing scrollbar's clamped row offset.
+// the existing scrollbar's clamped row offset. Auto Pilot queues a visible
+// mission destination for normal launch, route following and docking.
 // Ghidra 0x00446150 NovaUi_RunMissionComputerWindow (the gameplay command
 // 0x28 window, default key I). Modal over the flight scene: the active-
 // mission list (0x00445dc0 NovaUi_RebuildMissionComputerList), the selected
@@ -1647,7 +1652,8 @@ void NovaMission_RunMissionInfoWindow(
     SdlPlatform &platform,
     SdlAudio &audio,
     GameState &state,
-    const std::function<void()> &render_background) {
+    const std::function<void()> &render_background,
+    bool allow_autopilot) {
   SdlPlatform::ScopedPlacement placement_guard(platform,
                                                platform.current_placement());
   state.gameplay_now_ms = platform.gameplay_ticks_ms();
@@ -1676,9 +1682,15 @@ void NovaMission_RunMissionInfoWindow(
   if (!layout) {
     return;
   }
-  platform.SetPlacement(PlaceContained({layout->frame.w, layout->frame.h},
-                                       platform.dialog_content_size(),
-                                       platform.mission_dialog_scale()));
+  // Community footer uses the original button art; the original dialog and
+  // its controls keep their authored proportions.
+  const SDL_FRect footer{0, layout->frame.h, layout->frame.w, 34};
+  const SDL_FRect autopilot_button{
+      layout->frame.w - 118, footer.y + 6, 106, 22};
+  const SDL_FRect popout_button{layout->frame.w - 212, footer.y + 6, 88, 22};
+  const SDL_FPoint canvas{layout->frame.w, layout->frame.h + footer.h};
+  platform.SetPlacement(PlaceContained(
+      canvas, platform.dialog_content_size(), platform.mission_dialog_scale()));
   ProbeUiAutoClear probe_ui_guard(platform);
   const auto publish_probe_ui = [&]() {
     const auto probe_rect = [&platform](SDL_FRect rect) {
@@ -1688,6 +1700,8 @@ void NovaMission_RunMissionInfoWindow(
                             {{"window", probe_rect(layout->frame)},
                              {"abort", probe_rect(layout->abort_button)},
                              {"done", probe_rect(layout->done_button)},
+                             {"auto_pilot", probe_rect(autopilot_button)},
+                             {"pop_out", probe_rect(popout_button)},
                              {"list", probe_rect(layout->list)},
                              {"description", probe_rect(layout->description)}});
   };
@@ -1715,6 +1729,7 @@ void NovaMission_RunMissionInfoWindow(
       selected >= 0 ? BuildMissionInfoDescription(
                           state, rows[static_cast<std::size_t>(selected)].slot)
                     : std::string();
+  std::string autopilot_error;
 
   constexpr SDL_Color kText{255, 255, 255, 255};
   constexpr SDL_Color kPanelBlack{0, 0, 0, 255};
@@ -1762,7 +1777,7 @@ void NovaMission_RunMissionInfoWindow(
       SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
       SDL_RenderClear(renderer);
     }
-    platform.SetPlacement(PlaceContained({layout->frame.w, layout->frame.h},
+    platform.SetPlacement(PlaceContained(canvas,
                                          platform.dialog_content_size(),
                                          platform.mission_dialog_scale()));
     // DrawContext_BlitImageToRect(DAT_007742e4, UiWindow_GetRect(...)).
@@ -1910,6 +1925,49 @@ void NovaMission_RunMissionInfoWindow(
         layout->done_button,
         NovaHud_LoadStringEntry(0x96, 0x5).value_or("Done"),
         kText);
+    std::string hint;
+    const auto destination = MissionAutopilotDestination(
+        state,
+        selected >= 0 ? rows[static_cast<std::size_t>(selected)].slot : -1,
+        hint);
+    const bool enabled = allow_autopilot && destination.has_value();
+    if (!allow_autopilot)
+      hint = "Finish this mission offer before launching.";
+    else if (destination)
+      hint = "Launch, fly and dock at " +
+             state.scenario.Stellar(destination->stellar_id)->name + ".";
+    if (!autopilot_error.empty())
+      hint = autopilot_error;
+    SDL_SetRenderDrawColor(renderer, 16, 32, 48, SDL_ALPHA_OPAQUE);
+    SDL_RenderFillRect(renderer, &footer);
+    SDL_SetRenderDrawColor(renderer, 64, 88, 112, SDL_ALPHA_OPAQUE);
+    SDL_RenderRect(renderer, &footer);
+    button_art.Draw(platform,
+                    autopilot_button,
+                    enabled ? ButtonState::kNormal : ButtonState::kDisabled);
+    DrawThreeStateButtonLabel(
+        platform, font_cache, autopilot_button, "Auto Pilot", kText);
+    button_art.Draw(platform, popout_button, ButtonState::kNormal);
+    DrawThreeStateButtonLabel(
+        platform, font_cache, popout_button, "Pop Out", kText);
+    const auto hint_lines = WrapDescriptionLines(
+        hint,
+        static_cast<int>(popout_button.x - 22),
+        [&](std::string_view line) {
+          return font_cache.TextWidth(
+              NovaFontFamily::kGeneva, 9, kNovaFontStyleRegular, line);
+        });
+    for (std::size_t i = 0; i < std::min<std::size_t>(2, hint_lines.size());
+         ++i)
+      NovaText_Draw(platform,
+                    font_cache,
+                    NovaFontFamily::kGeneva,
+                    9,
+                    kNovaFontStyleRegular,
+                    kText,
+                    10,
+                    footer.y + 12 + static_cast<float>(i) * 12,
+                    hint_lines[i]);
     publish_probe_ui();
     platform.Present();
   };
@@ -2031,6 +2089,7 @@ void NovaMission_RunMissionInfoWindow(
         // it into view. The original reads compact key codes 9/10/0xb; the
         // port's normalized channel reports Tab/Up/Down as 0x0f/0x61/0x66.
         const auto move = [&](int delta) {
+          autopilot_error.clear();
           if (rows.empty()) {
             return;
           }
@@ -2088,6 +2147,7 @@ void NovaMission_RunMissionInfoWindow(
           const auto row = list_control.RowAt(point);
           const int new_selected = row ? static_cast<int>(*row) : -1;
           if (new_selected != selected) {
+            autopilot_error.clear();
             selected = new_selected;
             description =
                 selected >= 0
@@ -2097,7 +2157,23 @@ void NovaMission_RunMissionInfoWindow(
           }
           handled = true;
         }
-        if (!handled && contains(layout->abort_button, point)) {
+        if (!handled && contains(popout_button, point)) {
+          state.mission_panel.visible = true;
+          state.mission_panel.selected =
+              selected >= 0 ? rows[static_cast<std::size_t>(selected)].slot
+                            : -1;
+          state.mission_panel.scroll = std::max(0, selected - 3);
+          exit_requested = true;
+        } else if (!handled && contains(autopilot_button, point)) {
+          if (allow_autopilot && selected >= 0 &&
+              QueueMissionAutopilot(
+                  state,
+                  rows[static_cast<std::size_t>(selected)].slot,
+                  autopilot_error))
+            exit_requested = true;
+          else
+            play_cue(3);
+        } else if (!handled && contains(layout->abort_button, point)) {
           abort_selected();
           if (done()) {
             exit_requested = true;

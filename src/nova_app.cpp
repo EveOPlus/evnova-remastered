@@ -1282,6 +1282,9 @@ int NovaApp_Run(NovaRuntime &runtime) {
     NovaLog::Info("using player-selected EV Nova install root '{}'",
                   located->string());
   }
+  if (extra_prefs.remastered_graphics &&
+      !game::NovaUi_EnsureRemasteredGraphics(runtime.platform))
+    return 0;
   NovaGameSession_Run(runtime);
   // Ghidra NovaGameSession_Run calls NovaPrefs_SaveToDisk on exit; fold in the
   // runtime starmap-borders toggle so it round-trips even if the player never

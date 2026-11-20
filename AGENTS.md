@@ -22,7 +22,9 @@ nested `AGENTS.md` files apply to their directory and descendants.
   required below. Never expose the test listener in a player release.
 - Game data, pilot files, voice models, generated sprite packs, private
   analysis and build outputs remain outside source commits and public engine
-  ZIPs. See [CREDITS.md](CREDITS.md) and [NOTICE.md](NOTICE.md).
+  ZIPs. The maintainer has authorized the complete generated graphics pack as a
+  separate public release asset, automatically installed by the game; keep its
+  provenance and original-art credits. See [CREDITS.md](CREDITS.md) and [NOTICE.md](NOTICE.md).
 
 Escape Velocity Nova is Ambrosia Software's 2002 open-world 2D space-trading and combat RPG. Its SDL3-based C++ reimplementation under `src/` is well advanced. Work improves both implementation coverage and Ghidra's disassembly, decompilation, types, and symbols to support further reconstruction.
 

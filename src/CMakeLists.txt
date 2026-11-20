@@ -84,6 +84,7 @@ add_library(evnova_runtime
     game/trade_center.cpp
     game/system_markets.cpp
     game/navigation_panel.cpp
+    game/mission_panel.cpp
     game/sprite_world.cpp
     game/sprite_mask.cpp
     game/targeting.cpp

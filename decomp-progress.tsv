@@ -642,7 +642,7 @@ address	name	impl_file	reimpl_pct	comment
 0x004909A0	OutfitterMenu_FUN_004909a0		0%	
 0x00490C70	NovaUi_RedrawOutfitterMenu	src/game/docked_store_dialog.cpp	100%	
 0x00491950	NovaLanded_CanBuyOutfit	src/game/landed_store.cpp	100%	
-0x00491F30	NovaUi_RunTravelDestinationInteractionLoop	src/game/landed_window.cpp	60%	ui
+0x00491F30	NovaUi_RunTravelDestinationInteractionLoop	src/game/landed_window.cpp	60%	ui,divergence
 0x00492C40	NovaUi_RenderTravelDestinationOverlay		0%	
 0x00492F10	NovaUi_PollTravelScriptAction		0%	
 0x00492F30	NovaUi_RunShipyardPurchaseLoop	src/game/docked_store_dialog.cpp	92%	gameplay

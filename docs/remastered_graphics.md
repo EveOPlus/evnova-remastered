@@ -23,7 +23,13 @@ infers cleaner edges and surface detail; it does not recover lost source models.
 ## Sharper ships and planets
 
 `sprite_enhancement.*` keeps the decoded original artwork and selects an
-optional texture from `EV Nova/Remastered Sprites` only in remastered mode.
+enhanced texture only in remastered mode. Public Windows builds automatically
+install the complete 8,188-frame pack from the companion GitHub release asset
+into the shared support folder's `Remastered Sprites/original-4x-v1`. A progress
+screen shows download and installation; Retry handles failures, and Continue
+for now allows offline play with the fallback and retries next launch. The pack
+is about 555 MB and is retained across engine updates. Existing local packs at
+`EV Nova/Remastered Sprites` remain supported.
 The pack uses Real-ESRGAN x4plus with 20% of a bicubic reconstruction of the
 original blended back in to retain markings and texture. Output alpha is
 restricted to the original silhouette's sampling footprint. The lower-resolution
@@ -51,7 +57,12 @@ To reproduce the pack on Windows:
 4. Run `python tools/build_sprite_pack.py`. It deduplicates source frames,
    reconstructs them using GPU 0, and writes the compressed EVS1 pack and
    source manifest. `--prepare-only` and `--pack-only` support inspection.
-5. Run `tools/package-windows.ps1` to include the pack in the normal game.
+5. Run `python tools/package_graphics.py` to validate every frame and build the
+   companion release ZIP with provenance, tool license and original-art credits.
+   Publish it at the immutable URL pinned by `tools/game-downloads.json`.
+   The engine ZIP retains its existing allowlist so older updaters can migrate.
+   `setup-game-data.ps1 -GraphicsOnly` verifies the archive hash, count, total
+   size and entry names before installation; a receipt is written last.
 
 The four-byte EVS1 signature is followed by big-endian 16-bit width/height and
 zlib-compressed straight RGBA8. Each output is exactly four times the source
@@ -66,7 +77,8 @@ when the enhanced background replaces its draw, preserving simulation RNG
 cadence. Negative murk still hides ambient scenery. Textures are cached per
 system and space colour, with ordinary sprite draws as the failure fallback.
 The basic effects require no shaders or additional assets. The sharper artwork
-pack is included by the Windows packaging script when available.
+pack is downloaded automatically by public Windows releases, separately from
+small engine updates. Both campaigns share the same installed pack.
 
 The integration retains the reconstructed paths documented in
 [ship_sprite_rendering_path.md](ship_sprite_rendering_path.md) and

@@ -233,6 +233,30 @@ std::optional<std::filesystem::path> NovaPaths::SharedSupportDirectory() {
                                   : SupportDirectory();
 }
 
+std::optional<std::filesystem::path> NovaPaths::RemasteredPackDestination() {
+  if (const auto support = SharedSupportDirectory())
+    return *support / "Remastered Sprites" / kRemasteredPackId;
+  return std::nullopt;
+}
+
+std::optional<std::filesystem::path> NovaPaths::RemasteredPackDirectory() {
+  std::error_code error;
+  if (const auto path = RemasteredPackDestination()) {
+    std::string installed;
+    std::getline(std::ifstream(*path / ".installed"), installed);
+    if (installed == kRemasteredPackId &&
+        std::filesystem::is_regular_file(*path / "manifest.json", error))
+      return path;
+  }
+  // Existing private/source installations keep their original local pack.
+  if (const auto root = InstallRoot()) {
+    const auto path = *root / "Remastered Sprites";
+    if (std::filesystem::is_regular_file(path / "manifest.json", error))
+      return path;
+  }
+  return std::nullopt;
+}
+
 std::optional<std::filesystem::path>
 NovaPaths::SupportSubdirectory(std::string_view name) {
   const auto support = SupportDirectory();

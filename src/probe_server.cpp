@@ -1164,6 +1164,21 @@ void ProbeServer::PublishUi(std::string window_name,
   ui_rects_ = std::move(rects);
 }
 
+void ProbeServer::PublishOverlayUi(std::string name,
+                                   std::vector<ProbeNamedRect> rects) {
+  if (!running_.load())
+    return;
+  const std::lock_guard lock(ui_mutex_);
+  const auto prefix = name + ".";
+  std::erase_if(ui_rects_, [&](const auto &rect) {
+    return rect.name.starts_with(prefix);
+  });
+  if (ui_window_.empty())
+    ui_window_ = std::move(name);
+  for (auto &rect : rects)
+    ui_rects_.push_back(std::move(rect));
+}
+
 void ProbeServer::ClearUi() {
   const std::lock_guard lock(ui_mutex_);
   ui_window_.clear();

@@ -56,6 +56,13 @@ public:
   // Remake jump assist: take over only when range is the sole failed gate.
   bool AssistBlockedJump(const GameState &, std::uint64_t now_ms);
   bool FollowRoute(const GameState &, std::uint64_t now_ms);
+  // Caller plots the selected mission's shortest route before starting.
+  bool MissionAutopilot(const GameState &,
+                        const MissionAutopilotRequest &,
+                        std::uint64_t now_ms);
+
+  [[nodiscard]] bool FlyingMission() const { return mission_.has_value(); }
+
   [[nodiscard]] bool FollowingRoute() const;
   // Floating-map edits retarget active jump assistance without cancelling it.
   // Docking, mining and idle controllers keep their current task.
@@ -154,6 +161,7 @@ private:
                  FlightInput &,
                  float elapsed_ticks);
   std::vector<std::int16_t> route_plan_;
+  std::optional<MissionAutopilotRequest> mission_;
   std::size_t route_leg_ = 1;
   FlightAutomationStatus status_;
   std::int16_t target_id_ = -1;

@@ -13,7 +13,8 @@ Run tools from the repository root unless their help states otherwise. Read
 | ARPIA2 local preparation | `setup-arpia2.ps1` | [Campaign](../docs/arpia2.md); preserve original notices |
 | Voice installation | `setup-narration.ps1`, `narration-downloads.json` | [Narration](../docs/narration.md); `-Destination` isolates tests |
 | Speech worker | `nova_narrator.py` | Numbered stdin requests, local Piper models, cancellable sentence playback |
-| Enhanced sprite preparation | `build_sprite_pack.py` | [Graphics](../docs/remastered_graphics.md); derived packs remain local |
+| Enhanced sprite release | `package_graphics.py` | Validates and packages all frames, provenance and original-art credits |
+| Enhanced sprite preparation | `build_sprite_pack.py` | [Graphics](../docs/remastered_graphics.md); source frames and models stay local; the generated pack is a companion release asset |
 | Direct test interface | `nova_driver.py` | [Driver](../docs/windows_test_driver.md); input, UI, state, screenshots, isolated profiles |
 | Scenario execution | `scenario_runner.py`, `check_modern_controls.py` | [Scenarios](../docs/scenario_testing_plan.md), [probe](../docs/probe_harness.md) |
 | Port audit | `ref_audit.py` | Root instructions; `--gen` updates marked tracker rows |

@@ -193,3 +193,28 @@ then fly over the resource boxes. Its stock range is 120 world pixels. The
 miner finishes its short folding animation before the first shot. The remake's
 misnested fold-animation branch has been fixed: previously it could block
 firing indefinitely even with the secondary selected.
+
+
+**Active Missions (I) > Auto Pilot** flies to the selected mission's current
+planet or station, following the shortest known route and docking normally.
+I also opens this menu while docked; Auto Pilot launches the ship automatically.
+It is available from the active-mission window inside the Mission BBS too.
+Finish an unanswered mission offer before starting an autopilot. Return-leg
+missions target their return port after the outbound destination is reached.
+Failed, hidden or unavailable destinations and unknown routes produce an
+explanation and do not launch. Fuel, disabled-ship and landing permission rules
+still apply. Refuel when needed and select the mission's Auto Pilot again.
+Steering or another flight action cancels it. Browsing the floating map keeps
+the mission target; replacing its route stops it rather than docking somewhere
+unrelated. A failed/replaced mission or vanished destination stops the trip.
+
+
+**Active Missions (I) > Pop Out** opens a compact floating tracker in flight or
+at the main spaceport screen. Click the small **Auto Pilot arrow** to the right
+of a mission to launch if needed, follow its route and dock. Drag the small title
+bar to reposition it; only X closes it. Wheel scrolling stays within the panel,
+and clicking it does not steer, zoom the world or cancel an active autopilot.
+It updates destinations and removes completed missions automatically, and can
+remain open beside the floating map. Hovering an arrow identifies its action.
+The panel size follows its visible rows
+(up to four); the normal mission window remains available for full briefings.

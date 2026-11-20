@@ -1,6 +1,7 @@
 #include "game/boarding_plunder.hpp"
 #include "game/flight_automation.hpp"
 #include "game/jump_controls.hpp"
+#include "game/mission_navigation.hpp"
 #include "game/outfit.hpp"
 #include "game/spaceflight.hpp"
 #include "game/starmap_route.hpp"
@@ -199,7 +200,9 @@ TEST_CASE("auto-mine intercepts a crossing asteroid and fires into its path",
     bool fired = false;
     float path_length = 0;
     float ticks = 0;
-    for (; ticks < 1800; ticks += dt) {
+    const int max_steps = static_cast<int>(std::ceil(1800 / dt));
+    for (int step = 0; step < max_steps; ++step) {
+      ticks = static_cast<float>(step) * dt;
       FlightInput input;
       controller.Tick(state, static_cast<std::uint64_t>(ticks * 33), input, dt);
       if (input.fire_secondary) {
@@ -983,6 +986,109 @@ TEST_CASE("route autopilot can join its first jump already in progress",
   state.travel.engaging = true;
   state.travel.destination_system_id = 0;
   CHECK_FALSE(pilot.FollowRoute(state, 3));
+}
+
+TEST_CASE("Mission autopilot follows all jumps then docks at its selected port",
+          "[mission-autopilot]") {
+  auto state = RouteState();
+  auto &stellar = state.scenario.stellars[0];
+  stellar.system_id = 2;
+  stellar.is_available = true;
+  state.scenario.systems[2].nav_defs[0] = 0x80;
+  auto &mission = state.active_missions[0];
+  mission.mission_template_id = 7;
+  mission.travel_stellar_id = 0;
+  mission.return_stellar_id = -1;
+  state.active_mission_runtime_flags[0].is_active = true;
+  std::string reason;
+  REQUIRE(QueueMissionAutopilot(state, 0, reason));
+  REQUIRE(state.pending_mission_autopilot);
+  FlightAutomationController pilot;
+  REQUIRE(pilot.MissionAutopilot(state, *state.pending_mission_autopilot, 0));
+  FlightInput input;
+  pilot.Tick(state, 1, input);
+  CHECK(input.thrust);
+  CHECK_FALSE(input.land);
+  Arrive(state, 1);
+  input = {};
+  pilot.Tick(state, 2, input);
+  CHECK(pilot.FollowingRoute());
+  CHECK_FALSE(input.land);
+  Arrive(state, 2);
+  input = {};
+  pilot.Tick(state, 3, input);
+  CHECK_FALSE(pilot.FollowingRoute());
+  REQUIRE(pilot.FlyingMission());
+  REQUIRE(pilot.status().goal == FlightAutomationGoal::kLandAt);
+  state.travel.selected_stellar_id = 0x80;
+  state.travel.engage_timer = 0x2ee;
+  state.player.pos_x = static_cast<float>(stellar.pos_x);
+  state.player.pos_y = static_cast<float>(stellar.pos_y);
+  state.player.vel_x = 0;
+  state.player.vel_y = 0;
+  input = {};
+  pilot.Tick(state, 4, input);
+  CHECK(input.land);
+  CHECK_FALSE(input.travel);
+  pilot.ObservedDocked();
+  input = {};
+  pilot.Tick(state, 5, input);
+  CHECK_FALSE(input.land);
+  CHECK_FALSE(pilot.FlyingMission());
+  CHECK(pilot.status().phase == FlightAutomationPhase::kComplete);
+}
+
+TEST_CASE("Mission autopilot preserves mission identity and manual control",
+          "[mission-autopilot]") {
+  auto state = RouteState();
+  state.scenario.stellars[0].system_id = 0;
+  state.scenario.stellars[0].is_available = true;
+  auto &mission = state.active_missions[0];
+  mission.mission_template_id = 7;
+  mission.travel_stellar_id = 0;
+  mission.return_stellar_id = -1;
+  auto &flags = state.active_mission_runtime_flags[0];
+  flags.is_active = true;
+  std::string reason;
+  SECTION("hidden destination") {
+    mission.flags_primary = 2;
+    CHECK_FALSE(QueueMissionAutopilot(state, 0, reason));
+    CHECK_FALSE(state.pending_mission_autopilot);
+    return;
+  }
+  SECTION("unknown route leaves navigation and launch alone") {
+    state.scenario.stellars[0].system_id = 2;
+    state.scenario.systems[1].links.fill(-1);
+    const auto original_route = state.travel.starmap_route;
+    CHECK_FALSE(QueueMissionAutopilot(state, 0, reason));
+    CHECK_FALSE(state.pending_mission_autopilot);
+    CHECK(state.travel.starmap_route == original_route);
+    return;
+  }
+  SECTION("return leg uses its actual port") {
+    state.scenario.stellars[1].system_id = 0;
+    state.scenario.stellars[1].is_available = true;
+    mission.return_stellar_id = 1;
+    flags.travel_stellar_reached = true;
+    REQUIRE(QueueMissionAutopilot(state, 0, reason));
+    CHECK(state.pending_mission_autopilot->stellar_id == 0x81);
+    return;
+  }
+  REQUIRE(QueueMissionAutopilot(state, 0, reason));
+  FlightAutomationController pilot;
+  REQUIRE(pilot.MissionAutopilot(state, *state.pending_mission_autopilot, 0));
+  CHECK(pilot.status().goal == FlightAutomationGoal::kLandAt);
+  SECTION("manual steering cancels") { pilot.Cancel(); }
+  SECTION("mission expires") { flags.is_failed = true; }
+  SECTION("mission slot replaced") { mission.mission_template_id = 8; }
+  SECTION("port disappears") {
+    state.scenario.stellars[0].is_available = false;
+  }
+  FlightInput input;
+  pilot.Tick(state, 1, input);
+  CHECK_FALSE(input.land);
+  CHECK_FALSE(input.thrust);
+  CHECK_FALSE(pilot.FlyingMission());
 }
 
 TEST_CASE("floating map edits retarget active travel without cancelling it") {

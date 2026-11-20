@@ -49,7 +49,35 @@ try {
     Assert-Nova (-not (Test-Path (Join-Path $testRoot 'escaped'))) 'Archive escaped staging'
     Assert-Nova (-not (Test-Path (Join-Path $testRoot 'rejected'))) 'Rejected archive was partially installed'
     Assert-Nova (@(Get-ChildItem -LiteralPath $testRoot -Filter '.evnova-setup-*').Count -eq 0) 'Staging was not cleaned'
-    Write-Output 'Installer checks passed: offline cache, checksums, preservation, allowlist and unsafe paths.'
+    $graphics = Join-Path $testRoot 'graphics.zip'
+    $entries = @{'0123456789abcdef-1x1.evs'='test frame'; 'manifest.json'='{}'; 'provenance.json'='{}';
+                 'Real-ESRGAN-LICENSE.txt'='license'; 'CREDITS.md'='original artists'; 'NOTICE.md'='not MIT artwork'}
+    New-TestArchive $graphics $entries
+    $graphicsPackage = [pscustomobject]@{
+        id='test-4x-v1'; size=(Get-Item $graphics).Length;
+        sha256=(Get-FileHash $graphics -Algorithm SHA256).Hash;
+        file_count=$entries.Count; expanded_bytes=($entries.Values | ForEach-Object { [Text.Encoding]::UTF8.GetByteCount($_) } | Measure-Object -Sum).Sum
+    }
+    $graphicsTarget = Join-Path $testRoot 'test-4x-v1'
+    Install-NovaGraphicsArchive $graphicsPackage $graphics $graphicsTarget
+    Assert-Nova ((Get-Content (Join-Path $graphicsTarget '.installed') -Raw).Trim() -eq 'test-4x-v1') 'No completed graphics receipt'
+    Assert-Nova (Test-Path (Join-Path $graphicsTarget 'CREDITS.md')) 'Graphics credits lost'
+    $graphicsPackage.sha256 = 'bad'
+    Assert-NovaRejected { Install-NovaGraphicsArchive $graphicsPackage $graphics $graphicsTarget }
+    $graphicsPackage.sha256 = (Get-FileHash $graphics -Algorithm SHA256).Hash
+    $graphicsPackage.file_count += 1
+    Assert-NovaRejected { Install-NovaGraphicsArchive $graphicsPackage $graphics $graphicsTarget }
+    $graphicsPackage.file_count -= 1
+    Assert-NovaRejected { Install-NovaGraphicsArchive $graphicsPackage $graphics (Join-Path $testRoot 'wrong-destination') }
+    $unsafeGraphics = Join-Path $testRoot 'unsafe-graphics.zip'
+    $entries['../outside.evs'] = 'bad'
+    New-TestArchive $unsafeGraphics $entries
+    $graphicsPackage.size = (Get-Item $unsafeGraphics).Length
+    $graphicsPackage.sha256 = (Get-FileHash $unsafeGraphics -Algorithm SHA256).Hash
+    Assert-NovaRejected { Install-NovaGraphicsArchive $graphicsPackage $unsafeGraphics $graphicsTarget }
+    Assert-Nova (-not (Test-Path (Join-Path $testRoot 'outside.evs'))) 'Graphics escaped staging'
+    Assert-Nova (@(Get-ChildItem -LiteralPath $testRoot -Filter '.graphics-setup-*').Count -eq 0) 'Graphics staging was not cleaned'
+    Write-Output 'Installer checks passed: graphics completeness, credits, hashes, offline cache, preservation and unsafe paths.'
 } finally {
     $resolved = [IO.Path]::GetFullPath($testRoot)
     $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'

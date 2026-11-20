@@ -61,3 +61,21 @@ The first updater-capable build is `0.1.0-preview.2`. Older installations requir
 one manual download or local installation of that version before they can
 receive future updates automatically. GitHub authentication is not required
 for players.
+
+
+## Enhanced artwork delivery
+
+From 1.0.1, public Windows builds automatically install the complete 8,188-frame
+stock/ARPIA2 graphics pack before play, when Remastered graphics is enabled.
+The approximately 555 MB companion asset is pinned by URL and SHA-256 in
+`tools/game-downloads.json`. It lives in shared support data, survives engine
+updates and is not downloaded again per release. The first-launch screen shows
+progress, Retry and Continue for now for offline use.
+
+Keep the engine ZIP's historical allowlist unchanged: older installed updaters
+must be able to accept the new executable and existing setup helper filenames.
+Publish the graphics companion before making its referencing engine release
+Latest. Later releases can reuse that immutable graphics URL. To replace the
+artwork, generate a new pack ID, update both the paths constant and manifest,
+and validate and upload its companion before publishing. Never remove assets
+still pinned by a supported release. See [graphics](remastered_graphics.md).

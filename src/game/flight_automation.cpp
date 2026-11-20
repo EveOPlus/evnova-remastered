@@ -1,5 +1,6 @@
 #include "flight_automation.hpp"
 #include "boarding_plunder.hpp"
+#include "mission_navigation.hpp"
 #include "targeting.hpp"
 
 #include "outfit.hpp"
@@ -394,6 +395,7 @@ bool FlightAutomationController::LandAt(const GameState &state,
                                         std::uint64_t now_ms,
                                         std::uint64_t timeout_ms,
                                         float landing_envelope_axis_range) {
+  mission_.reset();
   const auto id = ResolveStellar(state, name);
   if (!id) {
     Fail("missing or ambiguous current-system stellar");
@@ -414,6 +416,7 @@ bool FlightAutomationController::JumpTo(const GameState &state,
                                         std::string name,
                                         std::uint64_t now_ms,
                                         std::uint64_t timeout_ms) {
+  mission_.reset();
   const auto id = ResolveLinkedSystem(state, name);
   if (!id) {
     Fail("missing, ambiguous, current, or non-adjacent system");
@@ -436,6 +439,7 @@ bool FlightAutomationController::DestroyShip(const GameState &state,
                                              std::uint64_t timeout_ms,
                                              std::int16_t ship_id,
                                              bool allow_missing) {
+  mission_.reset();
   status_ = {FlightAutomationGoal::kDestroy,
              FlightAutomationPhase::kSelect,
              std::move(name),
@@ -487,6 +491,7 @@ bool FlightAutomationController::AssistBlockedJump(const GameState &state,
                          travel.starmap_destination_system_id)
     return false;
   target_id_ = travel.starmap_destination_system_id;
+  mission_.reset();
   status_ = {FlightAutomationGoal::kJumpTo,
              FlightAutomationPhase::kMove,
              state.scenario.systems[static_cast<std::size_t>(target_id_)].name,
@@ -497,6 +502,7 @@ bool FlightAutomationController::AssistBlockedJump(const GameState &state,
 }
 
 void FlightAutomationController::Cancel() {
+  mission_.reset();
   status_.phase = FlightAutomationPhase::kCancelled;
   status_.detail = "cancelled";
   target_id_ = -1;
@@ -513,6 +519,8 @@ bool FlightAutomationController::FollowingRoute() const {
 
 void FlightAutomationController::NavigationChanged(const GameState &state,
                                                    std::uint64_t now_ms) {
+  if (mission_)
+    return; // Browsing the floating map must not replace a mission's port.
   if (state.travel.engaging || state.player.hyperspace_jump_timer > 0 ||
       status_.phase == FlightAutomationPhase::kIdle ||
       status_.phase == FlightAutomationPhase::kComplete ||
@@ -537,6 +545,7 @@ void FlightAutomationController::NavigationChanged(const GameState &state,
 
 bool FlightAutomationController::FollowRoute(const GameState &state,
                                              std::uint64_t now_ms) {
+  mission_.reset();
   if (!NovaStarmap_RouteHasHops(state))
     return false;
   // A quick second J may arrive after the first press has started the jump.
@@ -563,6 +572,33 @@ bool FlightAutomationController::FollowRoute(const GameState &state,
   return true;
 }
 
+bool FlightAutomationController::MissionAutopilot(
+    const GameState &state,
+    const MissionAutopilotRequest &request,
+    std::uint64_t now_ms) {
+  Cancel();
+  if (!MissionAutopilotStillValid(state, request) ||
+      NovaAiShip_IsDisabled(state, state.player)) {
+    Fail("Mission autopilot stopped: mission changed or ship disabled.");
+    return false;
+  }
+  const auto *stellar = state.scenario.Stellar(request.stellar_id);
+  if (stellar->system_id == state.player.current_system_id) {
+    if (!LandAt(state, std::to_string(request.stellar_id), now_ms, 180000, 75))
+      return false;
+  } else {
+    if (!FollowRoute(state, now_ms) ||
+        route_plan_.back() != stellar->system_id) {
+      Fail("Mission autopilot stopped: no route to the destination.");
+      return false;
+    }
+  }
+  mission_ = request;
+  status_.detail =
+      "Mission autopilot to " + stellar->name + ". Steer to cancel.";
+  return true;
+}
+
 void FlightAutomationController::TickRoute(const GameState &state,
                                            std::uint64_t now_ms,
                                            FlightInput &input,
@@ -576,6 +612,20 @@ void FlightAutomationController::TickRoute(const GameState &state,
     deadline_ms_ = now_ms + 180000; // Allow each leg a full departure window.
     tap_release_ = false;
     if (route_leg_ == route_plan_.size()) {
+      if (mission_) {
+        const auto request = *mission_;
+        if (LandAt(state,
+                   std::to_string(request.stellar_id),
+                   now_ms,
+                   180000,
+                   75)) {
+          mission_ = request;
+          status_.detail = "Docking at " +
+                           state.scenario.Stellar(request.stellar_id)->name +
+                           ".";
+        }
+        return;
+      }
       status_.phase = FlightAutomationPhase::kComplete;
       status_.detail = "Route complete.";
       return;
@@ -643,6 +693,7 @@ void FlightAutomationController::ObservedDocked() {
        status_.phase == FlightAutomationPhase::kWaiting)) {
     status_.phase = FlightAutomationPhase::kComplete;
     status_.detail = "Spaceport observed";
+    mission_.reset();
     target_id_ = -1;
     tap_release_ = false;
   }
@@ -910,6 +961,7 @@ void FlightAutomationController::TickMining(const GameState &state,
 }
 
 void FlightAutomationController::Fail(std::string detail) {
+  mission_.reset();
   status_.phase = FlightAutomationPhase::kFailed;
   status_.detail = std::move(detail);
   target_id_ = -1;
@@ -1041,6 +1093,7 @@ void FlightAutomationController::MoveToAndStopAt(const PlayerShip &ship,
 bool FlightAutomationController::BoardTarget(const GameState &state,
                                              std::int16_t slot,
                                              std::uint64_t now_ms) {
+  mission_.reset();
   status_ = {FlightAutomationGoal::kBoard,
              FlightAutomationPhase::kMove,
              "Disabled ship",
@@ -1134,6 +1187,11 @@ void FlightAutomationController::Tick(const GameState &state,
     return;
   if (state.game_over_pending || !state.player.is_active) {
     Fail("player died or left flight");
+    return;
+  }
+  if (mission_ && (!MissionAutopilotStillValid(state, *mission_) ||
+                   NovaAiShip_IsDisabled(state, state.player))) {
+    Fail("Mission autopilot stopped: mission changed or ship disabled.");
     return;
   }
   if (now_ms > deadline_ms_) {

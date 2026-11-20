@@ -147,3 +147,27 @@ local build with its exact published revision.
 Follow the current task's authorization; do not infer that every future source
 edit must be published immediately. [automatic_updates.md](automatic_updates.md)
 contains the release contract and [tests/README.md](../tests/README.md) the checks.
+
+
+## Public graphics and mission navigation (1.0.1)
+
+The maintainer explicitly requested all locally created enhanced art in public
+downloads. Keep generated frames out of Git; `package_graphics.py` makes the
+complete companion asset with provenance/license/credits. The existing setup
+helper's GraphicsOnly mode installs it into a versioned shared-support folder;
+`NovaUi_EnsureRemasteredGraphics` runs the first-launch progress screen. Do not
+put .evs files into the engine ZIP: older updater allowlists would reject it.
+
+Mission Auto Pilot queues a transient slot/template/destination request across
+normal docked launch. The flight boundary plots its known route, then the
+controller chains route completion to ordinary landing. The original pilot file
+format is unchanged. Active mission offers disallow launch until answered.
+Use the direct driver to verify docked launch and arrival; a button click alone
+is not sufficient evidence. The ARPIA2 sample pilot initially does not know the
+Sirius route; visit Kerella normally first or use a suitable isolated fixture.
+
+The floating mission panel (`mission_panel.*`) shares the checked command with
+the full mission window. It consumes only its pointer gestures, displays in
+flight and the main dock screen, and overlays prefixed driver controls without
+removing navigation/spaceport controls. Keep the two visible panels testable
+together and verify that moving/closing them preserves flight automation.

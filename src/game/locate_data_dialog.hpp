@@ -20,4 +20,8 @@ namespace game {
 [[nodiscard]] std::optional<std::filesystem::path>
 NovaUi_RunLocateDataDialog(SdlPlatform &platform);
 
+// Public Windows downloads install the shared enhanced artwork before play.
+// Continuing without it is allowed offline; false means the window was closed.
+[[nodiscard]] bool NovaUi_EnsureRemasteredGraphics(SdlPlatform &platform);
+
 } // namespace game

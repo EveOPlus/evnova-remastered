@@ -50,8 +50,8 @@ Ambrosia Software, ATMOS or ARPIA2 release.
   boarding approach, docking and asteroid mining.
 - Mouse-wheel scrolling in outfitter, shipyard, escort and mission menus.
 - Modern resolutions, fullscreen, sharper rendering and independently zoomable
-  world, radar and maps. Optional locally generated sprite packs keep the
-  original designs; see [remastered graphics](docs/remastered_graphics.md).
+  world, radar and maps. The complete enhanced artwork pack installs automatically on first launch,
+  preserving the original designs; see [remastered graphics](docs/remastered_graphics.md).
 - Double-click or Shift-click to plot a route; triple-click to start following
   it. J jumps once; double-J follows the route. A compact
   floating navigation map stays open in flight.

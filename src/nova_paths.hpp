@@ -64,6 +64,12 @@ ResolveUserSelectedInstallRoot(const std::filesystem::path &selected);
 // Shared downloaded runtimes, independent of the selected campaign.
 [[nodiscard]] std::optional<std::filesystem::path> SharedSupportDirectory();
 
+// Versioned, shared artwork download; original-resource directories stay
+// read-only.
+inline constexpr std::string_view kRemasteredPackId = "original-4x-v1";
+[[nodiscard]] std::optional<std::filesystem::path> RemasteredPackDestination();
+[[nodiscard]] std::optional<std::filesystem::path> RemasteredPackDirectory();
+
 // Installs a user-selected support folder, overriding SDL_GetPrefPath. Set by
 // tests so a save/load does not touch the developer's real per-user state;
 // pass nullopt to clear. Clears the cached resolution so the next

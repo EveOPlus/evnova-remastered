@@ -46,6 +46,8 @@ std::int16_t ProbeServer::ConsumePendingTradeQuantity() { return 0; }
 
 void ProbeServer::PublishUi(std::string, std::vector<ProbeNamedRect>) {}
 
+void ProbeServer::PublishOverlayUi(std::string, std::vector<ProbeNamedRect>) {}
+
 void ProbeServer::ClearUi() {}
 
 void ProbeServer::SetGeometry(SDL_FPoint, SDL_FRect) {}

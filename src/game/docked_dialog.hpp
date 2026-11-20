@@ -165,6 +165,7 @@ void NovaMission_RunMissionInfoWindow(
     SdlPlatform &platform,
     SdlAudio &audio,
     GameState &state,
-    const std::function<void()> &render_background);
+    const std::function<void()> &render_background,
+    bool allow_autopilot = true);
 
 } // namespace game
