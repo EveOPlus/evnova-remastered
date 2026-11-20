@@ -19,13 +19,14 @@ ship, planet and interface designs. Upstream history and the original
 
 ## Playing on Windows
 
-Download the Windows community preview from
-[Releases](https://github.com/EveOPlus/evnova-remastered/releases), or build
+Download the [latest Windows release](https://github.com/EveOPlus/evnova-remastered/releases/latest/download/evnova-windows-x64.zip), or build
 the game using the [Windows guide](docs/local_windows_build.md).
 Extract the whole ZIP before starting the game. New Windows releases download
 automatically and install on the next launch; control this in Extra Prefs.
 The main-menu footer shows the version and build ID. See
 [automatic updates and versioning](docs/automatic_updates.md).
+Completed, tested changes ship as regular numbered releases on one update
+stream for everyone; there is no separate preview channel.
 
 Open `evnova.exe`. On a new installation, **Download and Set Up**
 fetches Community Edition and ARPIA2 from
@@ -85,6 +86,13 @@ The original engine's MIT notice remains in [LICENSE.txt](LICENSE.txt).
 [Third-party notices](licenses/README.md) and [full credits](CREDITS.md) explain
 the separately licensed libraries, game and plug-in content, models and tools.
 The source license does not grant rights over downloaded game assets.
+
+## Working on the project
+
+Start with [agent instructions](AGENTS.md), [engine architecture](src/README.md)
+and the [documentation map](docs/README.md). The [agent handoff](docs/agent_handoff.md)
+records the build/research workflow, public-install policy and known verification
+limits. [Tests](tests/README.md) and [tools](tools/README.md) have their own guides.
 
 ## Prerequisites
 

@@ -14,6 +14,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $script:NovaRepository = 'EveOPlus/evnova-remastered'
 
 function Get-NovaVersion([string]$Text) {
+    # Retain old preview parsing so installed previews can upgrade to a regular release.
     if ($Text -notmatch '^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-preview\.(0|[1-9][0-9]*))?$') {
         throw "Unsupported release version: $Text"
     }
@@ -65,7 +66,8 @@ function Write-NovaJson([string]$Path, $Value) {
 function Get-NovaRelease($Releases, [string]$CurrentVersion) {
     $best = $null
     foreach ($release in $Releases) {
-        if ($release.draft -or ($release.prerelease -and $CurrentVersion -notmatch '-preview\.')) { continue }
+        if ($release.draft -or $release.prerelease -or
+            $release.tag_name -cnotmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { continue }
         try { $newer = (Compare-NovaVersion $release.tag_name $CurrentVersion) -gt 0 } catch { continue }
         if (-not $newer) { continue }
         $asset = @($release.assets | Where-Object { $_.name -ceq 'evnova-windows-x64.zip' -and $_.state -eq 'uploaded' })

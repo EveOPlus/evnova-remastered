@@ -1,5 +1,29 @@
 # Instructions
 
+## Community fork: start here
+
+Read [src/AGENTS.md](src/AGENTS.md), [src/README.md](src/README.md), and the
+relevant subsystem guide in [docs/README.md](docs/README.md). The
+[agent handoff](docs/agent_handoff.md) describes local workspace roles,
+verification evidence, release policy and known limitations. Instructions in
+nested `AGENTS.md` files apply to their directory and descendants.
+
+- This is **EV Nova Community Remaster**, an unofficial community fork built
+  with AI tooling. Preserve upstream history, credits, license notices and the
+  original ship, planet and interface designs.
+- Deliver completed, tested changes through regular numbered GitHub releases
+  from `main`. Use `major.minor.patch`, no new prereleases or nightly channel.
+  See [automatic updates](docs/automatic_updates.md).
+- The maintainer plays the public GitHub download and receives the same
+  updates as other players. Do not install a development build over that copy
+  or redirect its shortcut to a local build. Use isolated test profiles.
+- Prefer the direct test driver over controlling the desktop. Existing task
+  authorization to use it remains valid; otherwise obtain authorization as
+  required below. Never expose the test listener in a player release.
+- Game data, pilot files, voice models, generated sprite packs, private
+  analysis and build outputs remain outside source commits and public engine
+  ZIPs. See [CREDITS.md](CREDITS.md) and [NOTICE.md](NOTICE.md).
+
 Escape Velocity Nova is Ambrosia Software's 2002 open-world 2D space-trading and combat RPG. Its SDL3-based C++ reimplementation under `src/` is well advanced. Work improves both implementation coverage and Ghidra's disassembly, decompilation, types, and symbols to support further reconstruction.
 
 ## Workflow notes

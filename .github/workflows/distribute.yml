@@ -1,4 +1,4 @@
-name: Distribute nightly
+name: Distribute release
 
 on:
   # Enable manually after this fork has its own Apple signing credentials.
@@ -20,7 +20,7 @@ permissions:
 # A newer successful CI build supersedes the previous distribution run.
 # Its signed archive and submission receipt are saved before the long wait.
 concurrency:
-  group: distribute-nightly
+  group: distribute-release
   cancel-in-progress: true
 
 jobs:
@@ -252,7 +252,7 @@ jobs:
             const {data} = await github.rest.repos.getBranch({...context.repo, branch: 'main'});
             const current = data.commit.sha === process.env.SOURCE_SHA;
             core.setOutput('current', String(current));
-            if (!current) await core.summary.addRaw('Notarization succeeded; skipped nightly publishing because main has advanced. The notarized artifact remains downloadable.').write();
+            if (!current) await core.summary.addRaw('Notarization succeeded; skipped release publishing because main has advanced. The notarized artifact remains downloadable.').write();
 
       - name: Download notarized app
         if: steps.current.outputs.current == 'true'
@@ -270,16 +270,53 @@ jobs:
           run-id: ${{ needs.source.outputs.ci_run }}
           github-token: ${{ github.token }}
 
-      - name: Publish latest-nightly
+      - name: Read and validate the numbered release
+        id: version
+        if: steps.current.outputs.current == 'true'
+        env:
+          SOURCE_SHA: ${{ needs.source.outputs.sha }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, zipfile
+          with zipfile.ZipFile('dist/evnova-windows-x64.zip') as package:
+              manifest = json.loads(package.read('EV Nova Remastered/release.json'))
+          version = manifest['version']
+          if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', version):
+              raise ValueError('Only regular numbered releases can be published')
+          if manifest['build']['revision'] != os.environ['SOURCE_SHA'] or manifest['build']['probe'] != 'OFF':
+              raise ValueError('Package does not match the tested player build')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'tag=v{version}\n')
+          PY
+
+      - name: Keep published versions unchanged
+        if: steps.current.outputs.current == 'true'
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        with:
+          script: |
+            try {
+              const {data} = await github.rest.repos.getReleaseByTag({...context.repo, tag: process.env.RELEASE_TAG});
+              if (!data.draft) throw new Error('Version already published; bump VERSION for another update.');
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+
+      - name: Upload the complete release draft
+        id: upload
         if: steps.current.outputs.current == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest-nightly
+          tag_name: ${{ steps.version.outputs.tag }}
           target_commitish: ${{ needs.source.outputs.sha }}
-          name: Latest nightly
-          prerelease: true
+          name: EV Nova Community Remaster ${{ steps.version.outputs.tag }}
+          draft: true
+          prerelease: false
+          overwrite_files: false
           body: |
-            Automated snapshot of main, published after successful CI and Apple notarization.
+            Unofficial community release, published after successful CI and Apple notarization.
+            Developed with AI tooling; original creators and upstream contributors are credited in CREDITS.md.
 
             **macOS:** Developer ID signed and notarized, for Apple Silicon only.
             Extract the ZIP, move `EV Nova.app` to Applications, and open it.
@@ -295,3 +332,23 @@ jobs:
             dist/evnova-macos-arm64.zip
             dist/evnova-windows-x64.zip
           fail_on_unmatched_files: true
+
+      - name: Verify uploads and publish as Latest
+        if: steps.current.outputs.current == 'true'
+        uses: actions/github-script@v7
+        env:
+          RELEASE_ID: ${{ steps.upload.outputs.id }}
+        with:
+          script: |
+            const fs = require('fs');
+            const crypto = require('crypto');
+            const release_id = Number(process.env.RELEASE_ID);
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets, {...context.repo, release_id});
+            for (const name of ['evnova-windows-x64.zip', 'evnova-macos-arm64.zip']) {
+              const bytes = fs.readFileSync(`dist/${name}`);
+              const digest = 'sha256:' + crypto.createHash('sha256').update(bytes).digest('hex');
+              const asset = assets.find(a => a.name === name);
+              if (!asset || asset.state !== 'uploaded' || asset.size !== bytes.length || asset.digest !== digest)
+                throw new Error(`Upload verification failed: ${name}`);
+            }
+            await github.rest.repos.updateRelease({...context.repo, release_id, draft: false, prerelease: false, make_latest: 'true'});

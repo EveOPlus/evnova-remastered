@@ -9,11 +9,20 @@ try {
     Assert-Nova ((Compare-NovaVersion '0.1.0-preview.10' '0.1.0-preview.2') -gt 0) 'Preview sorting'
     Assert-Nova ((Compare-NovaVersion '0.1.0' '0.1.0-preview.10') -gt 0) 'Stable promotion'
     Assert-Nova ((Compare-NovaVersion '1.0.0' '1.0.0') -eq 0) 'Equal version'
+    Assert-Nova ((Compare-NovaVersion '1.0.10' '1.0.9') -gt 0) 'Regular release sorting'
     Reject-Nova { Get-NovaVersion 'nightly' }
     $asset = [pscustomobject]@{name='evnova-windows-x64.zip';state='uploaded';digest=('sha256:' + ('a'*64));size=1024;browser_download_url='https://github.com/EveOPlus/evnova-remastered/releases/download/v0.2.0-preview.2/evnova-windows-x64.zip'}
     $release = [pscustomobject]@{draft=$false;prerelease=$true;tag_name='v0.2.0-preview.2';assets=@($asset)}
     Assert-Nova ($null -eq (Get-NovaRelease @($release) '0.1.0')) 'Stable accepted a preview'
-    Assert-Nova ($null -ne (Get-NovaRelease @($release) '0.1.0-preview.1')) 'Preview release missing'
+    Assert-Nova ($null -eq (Get-NovaRelease @($release) '0.1.0-preview.1')) 'Old preview accepted another prerelease'
+    $release.prerelease=$false
+    Assert-Nova ($null -eq (Get-NovaRelease @($release) '0.1.0-preview.1')) 'Preview tag accepted as a regular release'
+    $release.tag_name='v1.0.0'
+    $asset.browser_download_url='https://github.com/EveOPlus/evnova-remastered/releases/download/v1.0.0/evnova-windows-x64.zip'
+    Assert-Nova ((Get-NovaRelease @($release) '0.1.0-preview.2').version -eq '1.0.0') 'Preview migration missing'
+    Assert-Nova ((Get-NovaRelease @($release) '0.9.0').version -eq '1.0.0') 'Regular release missing'
+    Assert-Nova ($null -eq (Get-NovaRelease @($release) '1.0.0')) 'Equal release accepted'
+    Assert-Nova ($null -eq (Get-NovaRelease @($release) '1.0.1')) 'Downgrade accepted'
     $release.draft=$true
     Assert-Nova ($null -eq (Get-NovaRelease @($release) '0.1.0-preview.1')) 'Draft accepted'
     $release.draft=$false; $asset.browser_download_url='https://example.com/game.zip'

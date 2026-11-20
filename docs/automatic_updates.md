@@ -12,10 +12,12 @@ the current version playable. The helper reports status in
 `.evnova-update/status.txt` beside the executable. Read-only installations need
 to be moved to a writable folder, or updated by extracting the release manually.
 
-Preview builds accept newer `major.minor.patch-preview.number` releases and
-stable releases. Stable builds accept newer stable releases only. Comparisons
-are numeric; the updater never installs an equal or older version. Drafts and
-releases without a completed Windows asset and SHA-256 digest are ignored.
+Everyone uses one stream of regular `major.minor.patch` releases, starting with
+`1.0.0`. Completed, tested changes on `main` are published with a new version;
+unfinished source changes do not update players. The updater ignores drafts,
+prereleases, preview tags and releases without a completed Windows asset and
+SHA-256 digest. Comparisons are numeric; it never installs an equal or older
+version. Existing `0.1.0-preview.2` installations can upgrade directly to `1.0.0`.
 
 Downloads use HTTPS and are restricted to this repository. Both the archive
 SHA-256 supplied by GitHub and the packaged file hashes must match. Archive
@@ -31,7 +33,7 @@ Updates never kill an active game session.
 The main-menu footer displays the community version and a short source build
 ID. Startup logs and `evnova.exe --version` include the full revision, build
 configuration and test-driver status. `release.json` records the version,
-revision and hashes of the package contents. The Windows preview is unsigned.
+revision and hashes of the package contents. The Windows executable is unsigned.
 
 `VERSION` is the version source. CMake embeds it into the executable and
 writes `build-info.json`; the public packager rejects a mismatched version or
@@ -45,9 +47,15 @@ number for a different binary.
 
 1. Bump `VERSION`, finish validation and commit the source.
 2. Build with that source revision; run `python tools/package_release.py`.
-3. Publish a release tagged `v<VERSION>` and upload the complete ZIP. Mark
-   preview versions as prereleases. Publish only after the upload finishes.
+3. Create a draft tagged `v<VERSION>` with **pre-release unchecked** and upload
+   the complete ZIP. Publish it as **Latest** only after the upload finishes.
 4. Confirm the asset's GitHub SHA-256 matches the locally packaged ZIP.
+
+The public download is always available at
+`https://github.com/EveOPlus/evnova-remastered/releases/latest/download/evnova-windows-x64.zip`.
+Player installations, including the maintainer's downloaded copy, receive
+updates through this same release process. Local development packages must not
+replace them or redirect their shortcuts.
 
 The first updater-capable build is `0.1.0-preview.2`. Older installations require
 one manual download or local installation of that version before they can

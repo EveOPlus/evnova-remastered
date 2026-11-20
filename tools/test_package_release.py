@@ -11,8 +11,8 @@ class PackageTests(unittest.TestCase):
     def test_only_listed_files_and_current_notices_are_packaged(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / "VERSION").write_text("0.1.0-preview.2")
-            build = dict(version="0.1.0-preview.2", probe="OFF", revision="fixture")
+            (root / "VERSION").write_text("1.0.0")
+            build = dict(version="1.0.0", probe="OFF", revision="fixture")
             for name in (*DOCUMENTS, "licenses/README.md", "licenses/sdl3.txt",
                          "EV Nova/Nova.rez", "Pilots/private.plt", ".env", "game.exe"):
                 path = root / name
@@ -39,6 +39,14 @@ class PackageTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 make_package(root, root / "game.exe", share, output, build)
             self.assertEqual(output.read_bytes(), original)
+
+    def test_prerelease_packages_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "VERSION").write_text("1.0.0-preview.1")
+            build = dict(version="1.0.0-preview.1", probe="OFF", revision="fixture")
+            with self.assertRaisesRegex(ValueError, "regular major.minor.patch"):
+                make_package(root, root / "game.exe", root, root / "public.zip", build)
 
 
 if __name__ == "__main__":

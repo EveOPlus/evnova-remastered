@@ -138,7 +138,7 @@ jobs:
           key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ matrix.triplet }}-${{ matrix.deploy_target }}-${{ hashFiles('vcpkg.json') }}-${{ env.VCPKG_COMMIT }}
 
       - name: Configure
-        run: cmake --preset release -DEVNOVA_ENABLE_PROBE=OFF -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DVCPKG_OVERLAY_TRIPLETS=ci-triplets -DCMAKE_OSX_DEPLOYMENT_TARGET=${{ matrix.deploy_target }}
+        run: cmake --preset release -DEVNOVA_ENABLE_PROBE=OFF -DEVNOVA_BUILD_REVISION=${{ github.sha }} -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DVCPKG_OVERLAY_TRIPLETS=ci-triplets -DCMAKE_OSX_DEPLOYMENT_TARGET=${{ matrix.deploy_target }}
 
       - name: Build
         run: cmake --build --preset release --parallel -- -k 0

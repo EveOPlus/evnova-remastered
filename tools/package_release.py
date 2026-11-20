@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 import tempfile
 import zipfile
@@ -40,6 +41,8 @@ def make_package(root: Path, binary: Path, dependency_share: Path, output: Path,
     if build_info is None:
         build_info = json.loads((binary.resolve().parents[1] / "build-info.json").read_text())
     version = (root / "VERSION").read_text().strip()
+    if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version):
+        raise ValueError("Public releases require a regular major.minor.patch version")
     if build_info["version"] != version or build_info["probe"] != "OFF":
         raise ValueError("Package requires a matching versioned player build with its test driver disabled")
     files = {name: root / name for name in DOCUMENTS}
@@ -55,7 +58,7 @@ def make_package(root: Path, binary: Path, dependency_share: Path, output: Path,
         archive = Path(temporary) / "release.zip"
         payloads = {name: source.read_bytes() for name, source in sorted(files.items())}
         payloads["START HERE.txt"] = (
-                "EV Nova Community Remaster - unofficial community preview\n"
+                "EV Nova Community Remaster - unofficial community release\n"
                 "Developed with AI tooling, including OpenAI Codex.\n\n"
                 "Extract this whole folder, then run evnova.exe.\n"
                 "Choose Download and Set Up to fetch Community Edition and ARPIA2.\n"
