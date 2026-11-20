@@ -45,6 +45,12 @@ Place the original ZIPs in the cache for offline installation; checksums are
 still verified. Rerunning setup repairs missing or empty resources. To replace
 a modified nonempty resource, move that specific file aside first.
 
+If FFmpeg is available on PATH, setup also prepares the four original bar-race
+movies and ARPIA2 movies for SDL playback. Existing `.mov.mpg` companions are
+preserved. Without FFmpeg, gambling still shows the original results and pays
+winnings; only movie playback is skipped. Rerun setup after installing FFmpeg
+to prepare movies for an existing data folder.
+
 ## Troubleshooting
 
 Keep the engine and its `tools` folder together. The latest status is recorded

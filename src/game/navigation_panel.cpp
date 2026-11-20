@@ -109,10 +109,13 @@ NavigationPanelInput NavigationPanel::Update(SdlPlatform &platform,
   auto &p = state.navigation_panel;
   if (!p.visible) {
     drag_ = Drag::none;
+    clicks_.Reset();
     return result;
   }
-  if (p.centered_system != state.player.current_system_id)
+  if (p.centered_system != state.player.current_system_id) {
     Center(state);
+    clicks_.Reset();
+  }
   const auto placement = PanelPlacement(platform, state);
   const auto rects = Rects(state);
   const SDL_FPoint pointer{input.window_mouse_x, input.window_mouse_y};
@@ -154,9 +157,15 @@ NavigationPanelInput NavigationPanel::Update(SdlPlatform &platform,
     }
   }
   last_pointer_ = pointer;
-  if (!result.consumed_pointer)
+  if (!result.consumed_pointer) {
+    if (input.primary_clicked || input.secondary_clicked)
+      clicks_.Reset();
     return result;
+  }
+  if (input.secondary_clicked)
+    clicks_.Reset();
   if (std::isfinite(input.scene_zoom_delta) && input.scene_zoom_delta != 0) {
+    clicks_.Reset();
     p.zoom = std::clamp(
         p.zoom *
             std::pow(.75F, std::clamp(input.scene_zoom_delta, -20.0F, 20.0F)),
@@ -168,6 +177,8 @@ NavigationPanelInput NavigationPanel::Update(SdlPlatform &platform,
       state.travel.engaging || state.player.hyperspace_jump_timer > 0;
   if (input.primary_clicked) {
     using evnova::util::Contains;
+    if (!Contains(rects.chart, local) || ResizeEdges(rects, local) != 0)
+      clicks_.Reset();
     if (Contains(rects.close, local)) {
       p.visible = false;
       drag_ = Drag::none;
@@ -192,6 +203,9 @@ NavigationPanelInput NavigationPanel::Update(SdlPlatform &platform,
       }
       const bool shift = platform.IsOriginalKeyCodeHeld(0x2a) ||
                          platform.IsOriginalKeyCodeHeld(0x36);
+      const unsigned presses =
+          clicks_.Press(busy ? -1 : hit, platform.wall_ticks_ms());
+      const bool plot_route = shift || presses >= 2;
       if (hit < 0)
         drag_ = Drag::chart;
       else if (busy)
@@ -201,11 +215,12 @@ NavigationPanelInput NavigationPanel::Update(SdlPlatform &platform,
         p.selected = hit;
         if (hit == state.player.current_system_id) {
           notice = "Current system.";
-        } else if (!shift &&
+        } else if (!plot_route &&
                    hit == state.travel.starmap_destination_system_id) {
           notice = "Current jump destination.";
-        } else if (shift) {
+        } else if (plot_route) {
           result.changed_route = PlotShortestStarmapRoute(state, hit);
+          result.follow_route = result.changed_route && presses == 3;
           notice = result.changed_route
                        ? "Route ready. J: one jump. Double-J: auto-route."
                        : "No known route to this system.";
@@ -218,7 +233,7 @@ NavigationPanelInput NavigationPanel::Update(SdlPlatform &platform,
             notice = "Destination ready. Press J to jump.";
           } else {
             state.travel.starmap_destination_system_id = previous;
-            notice = "Shift-click to plot a route here.";
+            notice = "Double-click or Shift-click to plot a route here.";
           }
         }
         state.route_map.overlay_visible = false;

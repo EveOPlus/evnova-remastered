@@ -36,17 +36,42 @@ Ghidra. The clean-room counterparts live in
 - Action arms: 2 = Gamble — STR# 0x7d2 0x169 via the text-reader when
   `credits < 1`, else the gambling window (`NovaUi_RunBarGamblingWindow`
   0x0047dc50, renamed 2026 from the misleading "GoodsFlashWindow"; DLOG
-  0x3ff, backdrop 0x2151, 4x4 flash-animation PICTs 0x2152..0x2181;
-  wager = min(credits, 1000), or min(credits, 10000) rounded to a 2-digit
-  quantum when the arm-modifier pair (0x38/0x6f — the Bet 1000/Bet 5000
-  buttons) is held; deducts the wager, rolls rand(4) never repeating the
-  previous roll, shows outcome desc 0x7ff8+roll, pays 4x on a match with the
-  STR# 0x7d2 0x172 "Your winnings" text; instructions desc 0x7ffc; **not
-  reconstructed yet**);
+  0x3ff, backdrop 0x2151; reconstructed in `src/game/bar_gambling.cpp`,
+  with betting details below);
   3 = news window (below); 5 = Hire Escort: gate 0x00468920, then
   `g_shipyard_purchase_mode = 1` and `NovaUi_RunShipyardPurchaseLoop`
   (0x00492f30), i.e. the shipyard window (DLOG 0x3ec, PICT 0x2135) in hire
   mode.
+
+## Galactic Racing Network (`NovaUi_RunBarGamblingWindow` 0x0047dc50)
+
+The Gamble button opens the original four Viper race choices: red, yellow,
+blue and green. Click a color to stake up to 1,000 credits, or Alt-click for
+a custom amount up to the smaller of your balance and 10,000 credits.
+Help opens the original instructions (desc 0x7ffc). A winning bet returns
+four times the stake. After the result, clicking a color resets the board;
+the next click places a new bet. Done returns to the bar.
+
+Verified against the archived decompilation of 0x0047dc50, 0x0047e1e0,
+0x004a2c30 and 0x0049e8e0:
+
+- Six authored DITL controls: Cancel/Done, Help, then the four colors.
+  Cards use `PICT 0x2152 + state*10 + color`: normal, pressed, winner, loser.
+  These are separate visual states, not animation frames. SDL hover replaces
+  native press tracking; an added footer shows credits and the wager shortcut.
+- The modifier pair 0x38/0x6f is Alt. It opens quantity-prompt mode 2 with
+  the Bet label and STR# 0x7d2 entry 0x174. It does **not** round the stake.
+- Deduct the stake once, then roll rand(4). If that initial roll equals the
+  previous winner, reroll until it differs from both the previous winner and
+  the player's choice. Otherwise accept the first roll, including a win.
+  The previous-winner value (DAT_007d17a8) starts at zero and survives closing
+  the window; it is session state, not a pilot field.
+- Outcome desc 0x7ff8 + winner supplies the text and Race 1.mov through
+  Race 4.mov. Append STR# 0x7d2 entry 0x172 and the gross payout on a win;
+  credit the winnings after the result is dismissed. The shared SDL movie
+  player uses converted `.mov.mpg` companions; text/results work without them.
+- Additional original keyboard shortcuts in callback LAB_0047e150 remain
+  unverified. Mouse controls, Escape and Enter are implemented.
 
 ## Holovid / news (`NovaUi_RunTravelNewsWindow` 0x0047d180)
 

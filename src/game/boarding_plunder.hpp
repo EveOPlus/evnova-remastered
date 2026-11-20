@@ -31,6 +31,19 @@ namespace game {
 class HudRenderer;
 class SpaceflightView;
 
+struct BoardingApproach {
+  float half_width = 16;
+  float half_height = 16;
+  bool speed_matched = false;
+  bool in_range = false;
+  bool aligned = false;
+};
+
+// Shared original range, relative-speed and heading gates for the command and
+// the community radial approach assist. Does not change either ship.
+[[nodiscard]] BoardingApproach InspectBoardingApproach(const Ship &player,
+                                                       const Ship &target);
+
 // The boarding-window offer set. Replaces the original's globals:
 //   cargo_type          DAT_007d17d0  (0..6 commodity bin, -1 = no offer)
 //   cargo_quantity      DAT_007d17d2

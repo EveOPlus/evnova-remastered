@@ -557,8 +557,36 @@ void Boarding_ResetShipAndAttackersAfterBoarding(GameState &state, Ship &ship) {
   NovaShip_ApplyInherentGovernmentVoice(state, ship);
 }
 
-// @port 0x0045A3D0 92% cadence
+BoardingApproach InspectBoardingApproach(const Ship &player,
+                                         const Ship &target) {
+  const auto span = TargetFrameSpan(target);
+  const auto heading_deg = [](float radians) {
+    return static_cast<int>(radians * (180.0F / 3.14159265358979F));
+  };
+  const auto shortest_delta = [](int a, int b) {
+    int delta = (a - b) % 360;
+    if (delta > 180)
+      delta -= 360;
+    if (delta < -180)
+      delta += 360;
+    return std::abs(delta);
+  };
+  const int player_heading = heading_deg(player.heading);
+  const int target_heading = heading_deg(target.heading);
+  return {span.full_x * .5F,
+          span.full_y * .5F,
+          std::fabs(target.vel_x - player.vel_x) <= .5F &&
+              std::fabs(target.vel_y - player.vel_y) <= .5F,
+          std::fabs(target.pos_x - player.pos_x) <= span.full_x * .5F &&
+              std::fabs(target.pos_y - player.pos_y) <= span.full_y * .5F,
+          shortest_delta(player_heading, target_heading) <= 30 ||
+              shortest_delta(player_heading, target_heading + 180) <= 30};
+}
+
+// @port 0x0045A3D0 92% cadence,divergence
 // Ghidra 0x0045a3d0 Player_HandleBoardTargetCommand.
+// Range/speed/heading checks also run in InspectBoardingApproach above.
+// DIVERGENCE(original): explain the formerly silent heading rejection.
 //
 // Clean-room summary (see docs/boarding_plunder_capture.md for the full map):
 // Validates the player's board command against the primary target (fire
@@ -640,22 +668,17 @@ void Player_HandleBoardTargetCommand(SdlPlatform &platform,
     return;
   }
 
-  constexpr float kBoardVelocityGate = 0.5F; // _DAT_00575598
-  constexpr float kBoardRangeShare = 0.5F; // same constant, per-axis frame span
-  constexpr float kBoardHeadingToleranceDeg = 30.0F;
+  const auto approach = InspectBoardingApproach(player, target);
 
   // ---- Relative velocity gate -------------------------------------------
-  if (std::fabs(target.vel_x - player.vel_x) > kBoardVelocityGate ||
-      std::fabs(target.vel_y - player.vel_y) > kBoardVelocityGate) {
+  if (!approach.speed_matched) {
     PlayTransitionCue(audio, state, 3, 1);
     ShowBoardingOverlay(state, 0x84); // "You're moving too fast to board..."
     return;
   }
 
   // ---- Range gate (per-axis, half of the target's full sprite frame) -----
-  const BoardRangeSpan span = TargetFrameSpan(target);
-  if (std::fabs(target.pos_x - player.pos_x) > span.full_x * kBoardRangeShare ||
-      std::fabs(target.pos_y - player.pos_y) > span.full_y * kBoardRangeShare) {
+  if (!approach.in_range) {
     PlayTransitionCue(audio, state, 3, 1);
     ShowBoardingOverlay(state, 0x83); // "You're not close enough to board..."
     return;
@@ -664,26 +687,11 @@ void Player_HandleBoardTargetCommand(SdlPlatform &platform,
   // ---- Heading gate -------------------------------------------------------
   // Original works on integer-truncated degrees (0 = up, clockwise): the
   // heading delta must be within 30 deg, or the target aligned 180 deg
-  // (docked nose-to-tail) within 30 deg. Silent return on failure.
-  const auto heading_deg = [](float radians) {
-    return static_cast<int>(radians * (180.0F / 3.14159265358979F));
-  };
-  const auto shortest_delta = [](int a, int b) {
-    int delta = (a - b) % 360;
-    if (delta > 180) {
-      delta -= 360;
-    }
-    if (delta < -180) {
-      delta += 360;
-    }
-    return std::abs(delta);
-  };
-  const int player_heading = heading_deg(player.heading);
-  const int target_heading = heading_deg(target.heading);
-  if (shortest_delta(player_heading, target_heading) >
-          static_cast<int>(kBoardHeadingToleranceDeg) &&
-      shortest_delta(player_heading, target_heading + 180) >
-          static_cast<int>(kBoardHeadingToleranceDeg)) {
+  // (docked nose-to-tail) within 30 deg.
+  if (!approach.aligned) {
+    NovaHud_ShowOverlayMessage(state,
+                               "Align alongside the target to board, or use "
+                               "radial Board to approach automatically.");
     return;
   }
 

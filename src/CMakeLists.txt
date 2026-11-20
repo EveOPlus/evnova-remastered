@@ -35,6 +35,7 @@ add_library(evnova_runtime
     game/probe_state.cpp
     game/selection_text_dialog.cpp
     game/asteroid.cpp
+    game/bar_gambling.cpp
     game/boarding_plunder.cpp
     game/about_dialog.cpp
     game/collision.cpp

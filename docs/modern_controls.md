@@ -6,7 +6,8 @@ Original keyboard bindings still work.
 | Control | Action |
 | --- | --- |
 | Hold left mouse in space | Turn toward the cursor and thrust once aligned |
-| Release left mouse | Automatically brake to a complete stop |
+| Release a left-mouse hold | Automatically brake to a complete stop |
+| Double-click empty space | Turn that way and cruise at normal full speed without braking |
 | Hold right mouse over a ship | Target, hail, or board it |
 | Hold right mouse over a planet/station | Target, hail, or automatically approach and dock |
 | Hold right mouse over empty space | Galaxy map, missions, or automatically dock at the nearest port |
@@ -15,8 +16,13 @@ Original keyboard bindings still work.
 | Mouse wheel over space | Zoom the world from 0.5x to 4x; the HUD keeps its own scale |
 | Mouse wheel over the minimap | Zoom radar independently from 0.5x to 4x |
 | Mouse wheel in the galaxy map | Zoom using the same steps and limits as + and - |
+| Mouse wheel in Outfitter, Shipyard or Hire Escort | Page the stock list like its up/down arrows |
+| Mouse wheel over mission lists or scrolling dialog text | Scroll the list or text within its normal limits |
 | System Markets in the space or port radial menu | Compare all local commodity exchanges |
 | Pop out in the galaxy map | Keep a draggable navigation panel open in flight |
+| Double-click or Shift-click a system in either map | Plot the shortest known route |
+| Triple-click a system in either flight map | Plot the route and start following it |
+| Bar > Gamble | Bet on the original racing game; Alt-click a racer for a custom wager |
 | Release the asteroid radial menu on Auto-mine | Approach, fire the mining weapon, then scoop the yield |
 | F11 | Toggle fullscreen from menus, flight, and dialogs |
 | J with a destination selected | If too close to jump, fly clear automatically and then jump |
@@ -30,7 +36,12 @@ text scaling.
 Mouse steering has a dead zone around the ship. Keyboard turning and reverse
 take priority. A mouse press beginning on the HUD or route map does not start
 steering. Jump, disabled-ship, and docking restrictions remain in the normal
-flight handlers. Steering cancels automatic docking.
+flight handlers. Steering cancels automatic docking or boarding.
+
+Two left presses within 500 ms and 12 screen pixels start cruise. The second
+press locks the direction relative to the ship; moving the pointer afterwards
+does not change it. A fresh hold or keyboard steering takes control again.
+Cruise uses normal thrust and top speed, without automatically using afterburner.
 
 Releasing a mouse flight hold applies a braking assist along the velocity vector
 without turning the ship. Deceleration follows the ship's effective thrust and
@@ -50,6 +61,12 @@ it does not start a stuck approach. Jump transitions and destroyed ships
 still block the modal. The persistent controls banner has been removed.
 Release selects the wedge under the pointer; a quick tap without moving cancels,
 including where the menu has shifted inward to fit a screen edge.
+Radial **Board** approaches a disabled ship, matches its drifting velocity,
+and aligns alongside it before issuing the normal boarding command. It reports
+an ineligible or lost target instead of leaving a silent request. Manual B keeps
+the original distance and speed checks and now explains when alignment is needed.
+Loot, capture, mission and crew rules remain in the normal boarding handler.
+
 Automatic docking uses the existing input-producing flight controller: it turns,
 thrusts, brakes, and issues the normal land command without teleporting.
 Arrival completes the docking goal in normal and test builds. Leaving the port

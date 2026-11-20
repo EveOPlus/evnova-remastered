@@ -25,6 +25,19 @@ Ghidra functions covered:
 Port home: `src/game/boarding_plunder.{hpp,cpp}`; ship swap in
 `docs/player_ship_swap.md`. Coverage: `decomp-progress.tsv`.
 
+## Community controls
+
+Radial **Board** now starts an approach controller. It matches the disabled
+ship's velocity, moves within the original per-axis boarding bounds, and turns
+within the original parallel or opposite-heading tolerance before sending B.
+Manual steering cancels the approach. Invalid targets produce an explanation.
+The normal command still applies all mission, crew, recovery and loot rules.
+
+The original heading gate silently returns when alignment fails. The community
+command now shows an alignment hint for manual B; this is a UI divergence, not
+a relaxation of the original boarding rules. Physics tests cover stationary
+and drifting disabled targets and reject disappearance or non-disabled hulls.
+
 ## 1. Ground truth
 
 ### 1.1 Command gates (0x0045a3d0)

@@ -1,4 +1,6 @@
 #include "flight_automation.hpp"
+#include "boarding_plunder.hpp"
+#include "targeting.hpp"
 
 #include "outfit.hpp"
 #include "ship_ai.hpp"
@@ -1036,6 +1038,91 @@ void FlightAutomationController::MoveToAndStopAt(const PlayerShip &ship,
     input.thrust = true;
 }
 
+bool FlightAutomationController::BoardTarget(const GameState &state,
+                                             std::int16_t slot,
+                                             std::uint64_t now_ms) {
+  status_ = {FlightAutomationGoal::kBoard,
+             FlightAutomationPhase::kMove,
+             "Disabled ship",
+             "Approaching to board. Steer to cancel."};
+  target_id_ = slot;
+  deadline_ms_ = now_ms + 180000;
+  if (slot < 1 || !state.SlotInRange(static_cast<std::size_t>(slot))) {
+    Fail("No ship selected to board.");
+    return false;
+  }
+  FlightInput unused;
+  TickBoarding(state, unused, 0);
+  // The initial eligibility check must not consume a ready boarding command.
+  if (status_.phase == FlightAutomationPhase::kComplete)
+    status_.phase = FlightAutomationPhase::kMove;
+  return status_.phase != FlightAutomationPhase::kFailed;
+}
+
+void FlightAutomationController::TickBoarding(const GameState &state,
+                                              FlightInput &input,
+                                              float elapsed_ticks) {
+  const auto &player = state.player;
+  const auto &target = state.ShipAt(static_cast<std::size_t>(target_id_));
+  if (state.travel.engaging || player.hyperspace_jump_timer > 0) {
+    Fail("Boarding stopped during hyperspace travel.");
+    return;
+  }
+  if (NovaAiShip_IsDisabled(state, player) ||
+      NovaTargeting_ShipAtCloakVisibilityThreshold(player)) {
+    Fail("Cannot approach to board while disabled or cloaked.");
+    return;
+  }
+  if (!target.is_active || NovaAiShip_IsDestroyed(target) ||
+      target.current_system_id != player.current_system_id ||
+      player.primary_target_ship_slot != target_id_) {
+    Fail("Boarding stopped: target changed or is no longer available.");
+    return;
+  }
+  if (!NovaAiShip_IsDisabled(state, target) || target.pers_def_slot == 0x3ff ||
+      (target.boarded_target_latch != 0 &&
+       !(target.mission_fleet_slot == -1 && target.fleet_recovery_hint >= 0))) {
+    Fail("This ship cannot be boarded.");
+    return;
+  }
+  const auto *cls = state.scenario.Ship(
+      static_cast<std::int16_t>(target.ship_class_id + 0x80));
+  if (!cls || (target.mission_fleet_slot == -1 && cls->crew < 1)) {
+    Fail("This ship cannot be boarded.");
+    return;
+  }
+  const auto approach = InspectBoardingApproach(player, target);
+  const auto stats = MotionStats(state);
+  if (!approach.in_range || !approach.speed_matched) {
+    MoveToAndStopAt(
+        player,
+        target.pos_x,
+        target.pos_y,
+        std::max(1.0F,
+                 std::min(approach.half_width, approach.half_height) * .35F),
+        stats.turn,
+        stats.thrust,
+        input,
+        elapsed_ticks,
+        target.vel_x,
+        target.vel_y);
+    return;
+  }
+  if (!approach.aligned) {
+    const float parallel = target.heading;
+    const float opposite = parallel + kPi;
+    const float heading = std::abs(AngleDelta(player.heading, parallel)) <=
+                                  std::abs(AngleDelta(player.heading, opposite))
+                              ? parallel
+                              : opposite;
+    Face(player.heading, heading, stats.turn, elapsed_ticks, input);
+    return;
+  }
+  input.board = true;
+  status_.phase = FlightAutomationPhase::kComplete;
+  status_.detail = "Boarding target.";
+}
+
 void FlightAutomationController::Tick(const GameState &state,
                                       std::uint64_t now_ms,
                                       FlightInput &input,
@@ -1064,6 +1151,10 @@ void FlightAutomationController::Tick(const GameState &state,
   }
   if (status_.goal == FlightAutomationGoal::kMine) {
     TickMining(state, input, elapsed_ticks);
+    return;
+  }
+  if (status_.goal == FlightAutomationGoal::kBoard) {
+    TickBoarding(state, input, elapsed_ticks);
     return;
   }
   if (status_.goal == FlightAutomationGoal::kJumpTo) {

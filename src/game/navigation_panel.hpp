@@ -1,6 +1,7 @@
 #pragma once
 
 #include "starmap.hpp"
+#include "starmap_clicks.hpp"
 
 namespace game {
 
@@ -13,6 +14,7 @@ void OpenNavigationPanel(GameState &state,
 struct NavigationPanelInput {
   bool consumed_pointer = false;
   bool changed_route = false;
+  bool follow_route = false;
 };
 
 // Non-modal remake chart. Shares the galaxy map's projection, discovery gates,
@@ -30,6 +32,7 @@ private:
   enum class Drag { none, window, chart, resize } drag_ = Drag::none;
   SDL_FPoint last_pointer_{};
   unsigned resize_edges_ = 0;
+  StarmapClicks clicks_;
 };
 
 } // namespace game

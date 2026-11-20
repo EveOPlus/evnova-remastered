@@ -1,4 +1,5 @@
 #include "selection_text_dialog.hpp"
+#include "../util/scroll_wheel.hpp"
 #include "movie_player.hpp"
 
 #include "../brgr_archive.hpp"
@@ -391,7 +392,9 @@ LoadBackdropPict(SdlPlatform &platform, std::uint16_t pict_id) {
 
 } // namespace
 
-// @port 0x004982a0 88% ui
+// @port 0x004982a0 88% ui,divergence
+// DIVERGENCE(original): wheel input scrolls the text through its existing
+// clamped view offset, including fractional trackpad motion.
 // TODO(decomp): save/restore player
 // ai_secondary_target_slot/travel_transfer_mode around the map,
 // over-static-surface redraw variants, pressed-button flash during click
@@ -599,6 +602,11 @@ void NovaUi_RunTextReaderDialog(SdlPlatform &platform,
   bool starmap_command_was_held = false;
   while (!platform.quit_requested()) {
     for (std::optional<TextInput> input; (input = platform.PollTextEvent());) {
+      if (input->key == TextKey::wheel &&
+          Contains(layout.window, platform.mouse_position())) {
+        view.ScrollBy(-30.0F * evnova::util::ClampedWheelDelta(input->wheel_y));
+        continue;
+      }
       if (input->key == TextKey::escape || input->key == TextKey::enter) {
         // Divergence: the original closes only via its Done button.
         NovaLog::Todo("text-reader Esc/Enter closes; the original exits only "

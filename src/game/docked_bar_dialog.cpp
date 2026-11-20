@@ -8,6 +8,7 @@
 #include "../brgr_archive.hpp"
 #include "../log.hpp"
 #include "../sdl_platform.hpp"
+#include "bar_gambling.hpp"
 #include "boarding_plunder.hpp"
 #include "government.hpp"
 #include "hud_overlay.hpp"
@@ -270,11 +271,10 @@ std::string BarCommodityName(std::int16_t commodity) {
       .value_or("?");
 }
 
-// @port 0x0047c8e0 65% ui
+// @port 0x0047c8e0 75% ui
 // TODO(decomp): icon glyphs, the Communications frame and the desc placeholder
-// expansion (<=1) still mocked; the gambling window (0x0047dc50,
-// NovaUi_RunBarGamblingWindow) remains unported. Ghidra 0x0047c8e0
-// NovaUi_RunTravelDestinationServicesWindow.
+// expansion (<=1) still mocked.
+// Ghidra 0x0047c8e0 NovaUi_RunBarWindow.
 // @port 0x0047cfe0 75% rendering
 // @port 0x004A2810 70% ui
 // @port 0x004A26E0 70% ui
@@ -527,10 +527,7 @@ LandedExit RunBarDialog(SdlPlatform &platform,
             false,
             draw_bar_contents);
       } else {
-        // TODO(decomp(0x0047dc50)) skipped: the gambling window (DLOG 0x3ff,
-        // backdrop 0x2151, bet 1000/10000 arms, 4x payout on the rand(4)
-        // match, outcome descs 0x7ff8+roll) is not reconstructed.
-        NovaLog::Todo("bar gamble window 0x0047dc50 not reconstructed yet");
+        RunBarGamblingWindow(platform, state, draw_bar_contents);
       }
       break;
     }

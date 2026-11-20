@@ -68,6 +68,8 @@ struct StarmapResult {
   // or -1 when no selection was made. The caller may treat this as a plotted
   // next-jump destination.
   std::int16_t destination_system_id = -1;
+  // A triple-click in the flight map requests the caller's route autopilot.
+  bool follow_route = false;
 };
 
 // Ghidra 0x00468d90 NovaUi_DrawSystemFactionConflictStatus. Callers apply

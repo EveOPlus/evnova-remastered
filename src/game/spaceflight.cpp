@@ -1915,6 +1915,13 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
       automation.NavigationChanged(state, host_now_ms);
       jump_key.CancelPending();
     }
+    if (navigation_input.follow_route &&
+        automation.FollowRoute(state, host_now_ms)) {
+      manual_jump_assist = true;
+      mouse_control.Cancel();
+      NovaHud_ShowOverlayMessage(
+          state, "Following route. Press J again or steer to cancel.");
+    }
     if (std::isfinite(frame_input.scene_zoom_delta) &&
         frame_input.scene_zoom_delta != 0.0F) {
       auto scale = platform.presentation_scale();
@@ -2018,9 +2025,18 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
         state.player.is_active && !state.travel.engaging &&
         state.player.hyperspace_jump_timer <= 0.0F &&
         !NovaAiShip_IsDisabled(state, state.player);
-    mouse_control.Update(frame_input,
-                         in_scene && !state.route_map.overlay_visible,
-                         mouse_controls_available);
+    const auto mouse_ship_center = mouse_geometry.placement.ToWindow(
+        {mouse_geometry.viewport_w * .5F, mouse_geometry.viewport_h * .5F});
+    const bool was_cruising = mouse_control.cruising();
+    mouse_control.Update(
+        frame_input,
+        in_scene && !state.route_map.overlay_visible,
+        mouse_controls_available,
+        platform.wall_ticks_ms(),
+        {pointer.x - mouse_ship_center.x, pointer.y - mouse_ship_center.y});
+    if (mouse_control.cruising() && !was_cruising)
+      NovaHud_ShowOverlayMessage(
+          state, "Cruising. Click and hold or steer to take control.");
     const bool manual_steering =
         frame_input.turn_left || frame_input.turn_right || frame_input.thrust ||
         frame_input.reverse || frame_input.afterburner ||
@@ -2140,6 +2156,11 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
           NovaHud_ShowOverlayMessage(state,
                                      "No landing destination in this system.");
         }
+      } else if (action == RadialAction::board &&
+                 target.kind == MouseTargetKind::ship) {
+        (void)automation.BoardTarget(
+            state, target.id, platform.gameplay_ticks_ms());
+        NovaHud_ShowOverlayMessage(state, automation.status().detail);
       } else {
         pending_mouse_action = action;
       }
@@ -2200,7 +2221,8 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
           static_cast<std::uint64_t>(std::max(0.0, simulation_tick_ms));
       const float frame_time_ms = simulation_quantum_ms;
       FlightInput input = frame_input;
-      if (mouse_control.steering() && in_scene && !state.travel.engaging) {
+      if (mouse_control.steering() && (in_scene || mouse_control.cruising()) &&
+          !state.travel.engaging) {
         const auto *mouse_ship_class = state.scenario.Ship(
             static_cast<std::int16_t>(state.player.ship_class_id + 0x80));
         const float turn_step =
@@ -2211,10 +2233,12 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
         const auto center = mouse_geometry.placement.ToWindow(
             {mouse_geometry.viewport_w * 0.5F,
              mouse_geometry.viewport_h * 0.5F});
-        (void)ApplyMouseSteering(state.player.heading,
-                                 {pointer.x - center.x, pointer.y - center.y},
-                                 turn_step,
-                                 input);
+        (void)ApplyMouseSteering(
+            state.player.heading,
+            mouse_control.Direction(
+                {pointer.x - center.x, pointer.y - center.y}),
+            turn_step,
+            input);
       }
       switch (pending_mouse_action) {
       case RadialAction::hail:
@@ -2239,10 +2263,14 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
       pending_mouse_action = RadialAction::cancel;
       const bool was_following_route = automation.FollowingRoute();
       const bool was_mining = automation.Mining();
-      const auto previous_detail =
-          was_mining ? automation.status().detail : std::string{};
+      const bool was_boarding =
+          automation.status().goal == FlightAutomationGoal::kBoard;
+      const auto previous_detail = (was_mining || was_boarding)
+                                       ? automation.status().detail
+                                       : std::string{};
       automation.Tick(state, now_ms, input, frame_time_ms / kOriginalTickMs);
-      if (was_mining && previous_detail != automation.status().detail)
+      if ((was_mining || was_boarding) &&
+          previous_detail != automation.status().detail)
         NovaHud_ShowOverlayMessage(state, automation.status().detail);
       if (was_following_route && !automation.FollowingRoute())
         NovaHud_ShowOverlayMessage(state, automation.status().detail);
@@ -2259,6 +2287,8 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
           return "destroy";
         case FlightAutomationGoal::kMine:
           return "mine";
+        case FlightAutomationGoal::kBoard:
+          return "board";
         case FlightAutomationGoal::kNone:
           return "none";
         }
@@ -2863,6 +2893,14 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
         if (map_result.destination_system_id >= 0) {
           NovaTravel_PlotStarmapDestination(state,
                                             map_result.destination_system_id);
+        }
+        if (map_result.follow_route &&
+            automation.FollowRoute(state, platform.gameplay_ticks_ms())) {
+          manual_jump_assist = true;
+          jump_key.CancelPending();
+          mouse_control.Cancel();
+          NovaHud_ShowOverlayMessage(
+              state, "Following route. Press J again or steer to cancel.");
         }
         // Refresh the travel reticle after the map may have re-selected the
         // travel stellar. The original re-arms every command edge latch on map

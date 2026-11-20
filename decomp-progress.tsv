@@ -214,7 +214,7 @@ address	name	impl_file	reimpl_pct	comment
 0x0043BA30	Shot_AimStellarBatteryShot	src/game/weapon_shots.cpp	90%	correctness
 0x0043BBB0	NovaResources_LoadMisnResourceDefs	src/game/scenario_data.cpp	100%	divergence
 0x0043C3E0	Misn_ResolveMissionStellarLocators	src/game/mission.cpp	100%	divergence
-0x0043C470	NovaUi_RunMissionBbsWindow	src/game/docked_mission_dialog.cpp	78%	ui,gameplay
+0x0043C470	NovaUi_RunMissionBbsWindow	src/game/docked_mission_dialog.cpp	78%	ui,gameplay,divergence
 0x00441620	NovaUi_DrawMissionBbsWindow	src/game/docked_mission_dialog.cpp	65%	ui,rendering
 0x0043CC20	Stellar_RebuildTravelDestinationList		0%	
 0x0043CF00	Mission_EvaluateMissionLists	src/game/mission.cpp	85%	gameplay
@@ -242,7 +242,7 @@ address	name	impl_file	reimpl_pct	comment
 0x004444F0	Stellar_BuildTravelDestinationDescription	src/game/mission_text.cpp	80%	gameplay,ui,bugfix
 0x00445D70	Mission_ReplaceSubstringInMissionText	src/game/mission_text.cpp	100%	
 0x00445DC0	NovaUi_RebuildMissionComputerList	src/game/docked_mission_dialog.cpp	85%	ui,rendering
-0x00446150	NovaUi_RunMissionComputerWindow	src/game/docked_mission_dialog.cpp	88%	ui,rendering
+0x00446150	NovaUi_RunMissionComputerWindow	src/game/docked_mission_dialog.cpp	88%	ui,rendering,divergence
 0x00446770	NovaUi_PollMissionComputerWindow	src/game/docked_mission_dialog.cpp	65%	ui
 0x00446E00	NovaUi_DrawMissionComputerWindow	src/game/docked_mission_dialog.cpp	70%	ui,rendering
 0x00447170	NovaUi_PollMissionOfferWindow	src/game/docked_mission_dialog.cpp	85%	ui,divergence
@@ -307,7 +307,7 @@ address	name	impl_file	reimpl_pct	comment
 0x00456CA0	Stellar_EnterWormhole	src/game/travel.cpp	75%	rng,rendering
 0x00457580	Stellar_HandleStellarEntryAndExit	src/game/landed_window.cpp	60%	gameplay,cadence,rendering
 0x00459950	NovaUi_UpdateTravelEngagementProgress	src/game/travel.cpp	95%	gameplay,ui
-0x0045A3D0	Player_HandleBoardTargetCommand	src/game/boarding_plunder.cpp	92%	cadence
+0x0045A3D0	Player_HandleBoardTargetCommand	src/game/boarding_plunder.cpp	92%	cadence,divergence
 0x0045BAA0	Ship_RecenterSpaceObjectsForWorldWrap	src/game/world_wrap.cpp	100%	
 0x0045C6D0	Ship_WorldWrapPositionRelativeToPlayer	src/game/world_wrap.cpp	100%	
 0x0045C7A0	NovaUi_MarkTravelAndStatusPanelsDirty	src/game/spaceflight.cpp	100%	divergence
@@ -571,14 +571,14 @@ address	name	impl_file	reimpl_pct	comment
 0x0047B960	SWParticles_SpawnParticle	src/game/impact_effects.cpp	80%	rendering
 0x0047BDD0	SWParticles_DrawParticles	src/game/spaceflight_view.cpp	80%	rendering,bugfix
 0x0047C800	SWParticles_Update	src/game/impact_effects.cpp	95%	cadence
-0x0047C8E0	NovaUi_RunBarWindow	src/game/docked_bar_dialog.cpp	65%	ui
+0x0047C8E0	NovaUi_RunBarWindow	src/game/docked_bar_dialog.cpp	75%	ui
 0x0047CFE0	NovaUi_DrawTravelDestinationServicesWindow	src/game/docked_bar_dialog.cpp	75%	rendering
 0x0047D180	NovaUi_RunTravelNewsWindow	src/game/docked_bar_dialog.cpp	80%	ui
 0x0047D370	NovaUi_DrawTravelNewsWindow	src/game/docked_bar_dialog.cpp	95%	ui
 0x0047D560	NovaUi_HandleTravelNewsWindowInput	src/game/docked_bar_dialog.cpp	90%	ui
 0x0047D600	NovaUi_ComposeTravelNewsTexts	src/game/docked_bar_dialog.cpp	85%	ui
-0x0047DC50	NovaUi_RunBarGamblingWindow		0%	Bar Gamble button; the 0x2152+ flash PICTs are the gambling-machine animation; bet 1000/10000 arms
-0x0047E1E0	NovaUi_DrawBarGamblingWindow		0%	Draw callback of the bar gambling window 0x0047dc50. Not yet ported.
+0x0047DC50	NovaUi_RunBarGamblingWindow	src/game/bar_gambling.cpp	95%	ui,divergence,moddata
+0x0047E1E0	NovaUi_DrawBarGamblingWindow	src/game/bar_gambling.cpp	100%	divergence
 0x0047E2D0	NovaHud_ShowOverlayMessage	src/game/hud_overlay.cpp	80%	ui
 0x0047E430	NovaHud_ShowCachedOverlayMessage	src/game/hud_overlay.cpp	85%	ui
 0x0047E470	NovaUi_RunTargetShipCommWindow	src/game/ship_comm_dialog.cpp	82%	ui
@@ -637,7 +637,7 @@ address	name	impl_file	reimpl_pct	comment
 0x0048D5A0	NovaUi_TradeCenterCycleSelection	src/game/trade_center.cpp	95%	gameplay
 0x0048D6F0	NovaUi_RedrawTradeCenterWindow	src/game/docked_trade_dialog.cpp	85%	ui
 0x0048E970	NovaUi_LoadTravelOverlaySprites		0%	
-0x0048EA70	NovaUi_RunOutfitterInteractionLoop	src/game/docked_store_dialog.cpp	65%	gameplay,bugfix
+0x0048EA70	NovaUi_RunOutfitterInteractionLoop	src/game/docked_store_dialog.cpp	65%	gameplay,bugfix,divergence
 0x004903C0	NovaUi_HandleOutfitterMenuInput	src/game/landed_store.cpp	75%	ui
 0x004909A0	OutfitterMenu_FUN_004909a0		0%	
 0x00490C70	NovaUi_RedrawOutfitterMenu	src/game/docked_store_dialog.cpp	100%	
@@ -662,7 +662,7 @@ address	name	impl_file	reimpl_pct	comment
 0x00497DF0	Frame_RenderViewportBackground	src/game/spaceflight_view.cpp	50%	rendering
 0x00497EB0	NovaUi_ShowCaptureDecisionDialog	src/game/boarding_plunder.cpp	75%	gameplay
 0x00498110	FUN_00498110		0%	
-0x004982A0	Ui_RunTravelSelectionDialog	src/game/selection_text_dialog.cpp	88%	ui
+0x004982A0	Ui_RunTravelSelectionDialog	src/game/selection_text_dialog.cpp	88%	ui,divergence
 0x00498DC0	NovaUi_UpdateSelectedShipPurchaseAllowed	src/game/landed_store.cpp	85%	license
 0x00499150	thunk_FUN_008745b6		0%	
 0x00499270	NovaUi_ScrollSelectionText	src/game/selection_text_dialog.cpp	85%	correctness
@@ -708,7 +708,7 @@ address	name	impl_file	reimpl_pct	comment
 0x004A2810	NovaUi_DrawTravelDestinationServicesButtons	src/game/docked_bar_dialog.cpp	70%	ui
 0x004A2960	OutfitterMenu_FUN_004a2960		0%	
 0x004A2AC0	OutfitterMenu_FUN_004a2ac0	src/game/selection_text_dialog.cpp	40%	ui,rendering
-0x004A2C30	OutfitterMenu_FUN_004a2c30		0%	
+0x004A2C30	OutfitterMenu_FUN_004a2c30	src/game/bar_gambling.cpp	100%	divergence
 0x004A2DE0	OutfitterMenu_FUN_004a2de0		0%	
 0x004A2F50	NovaUi_InitThreeStateButtonArt	src/game/services_buttons.cpp	60%	ui
 0x004A3300	NovaUi_ShutdownThreeStateButtonArt		0%	

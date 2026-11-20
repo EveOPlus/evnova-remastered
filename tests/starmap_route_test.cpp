@@ -1,8 +1,27 @@
 #include "game/game_state.hpp"
+#include "game/starmap_clicks.hpp"
 #include "game/starmap_route.hpp"
 #include "game/travel.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+
+TEST_CASE("Map multi-click gestures stay on one destination and expire",
+          "[starmap-route]") {
+  game::StarmapClicks clicks;
+  CHECK(clicks.Press(4, 100) == 1);
+  CHECK(clicks.Press(4, 250) == 2);
+  CHECK(clicks.Press(4, 400) == 3);
+  CHECK(clicks.Press(4, 550) == 1);  // A fourth click begins a new gesture.
+  CHECK(clicks.Press(7, 650) == 1);  // Different destination.
+  CHECK(clicks.Press(7, 1151) == 1); // Too slow.
+  CHECK(clicks.Press(7, 1200) == 2);
+  clicks.Reset(); // Pan, zoom, other control, close, or system arrival.
+  CHECK(clicks.Press(7, 1250) == 1);
+  CHECK(clicks.Press(-1, 1300) == 0); // Empty chart or jump lock.
+  CHECK(clicks.Press(7, 1400) == 1);
+  CHECK(clicks.Press(7, 1900) == 2); // Inclusive 500 ms interval.
+  CHECK(clicks.Press(7, 1800) == 1); // No accidental wraparound match.
+}
 
 namespace {
 game::GameState Galaxy(std::size_t count) {

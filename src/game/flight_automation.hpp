@@ -15,7 +15,8 @@ enum class FlightAutomationGoal {
   kJumpTo,
   kFollowRoute,
   kDestroy,
-  kMine
+  kMine,
+  kBoard
 };
 enum class FlightAutomationPhase {
   kIdle,
@@ -60,6 +61,7 @@ public:
   // Docking, mining and idle controllers keep their current task.
   void NavigationChanged(const GameState &, std::uint64_t now_ms);
   bool MineAsteroid(const GameState &, std::int16_t slot, std::uint64_t now_ms);
+  bool BoardTarget(const GameState &, std::int16_t slot, std::uint64_t now_ms);
   [[nodiscard]] bool Mining() const;
   // High-level "destroy a ship" routine. `target` matches an active ship in
   // the player's system by class display name (case-insensitive), falling back
@@ -140,6 +142,7 @@ private:
   // kDestroy body: acquires via the target-cycle hotkey, then leads/fires.
   void TickDestroy(const GameState &, FlightInput &, float elapsed_ticks);
   void TickMining(const GameState &, FlightInput &, float elapsed_ticks);
+  void TickBoarding(const GameState &, FlightInput &, float elapsed_ticks);
   std::uint64_t mining_group_ = 0;
   std::int16_t mining_system_ = -1;
   std::int16_t mining_bank_ = -1;

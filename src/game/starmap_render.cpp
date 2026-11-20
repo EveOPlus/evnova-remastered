@@ -804,7 +804,7 @@ void DrawGalaxy(SdlPlatform &platform,
              tint(StellarDisplayColor(state, m.zero_based_id)),
              static_cast<double>(view.zoom) < kZoomInLimit ? 2.0F : 1.0F);
 
-    // Community display divergence: retain the usual mission arrow (CICN
+    // DIVERGENCE(original): retain the usual mission arrow (CICN
     // 0x3a98) up-left even when selected or occupied. The original suppresses
     // it for selection at 0x004a8f0a; the separate selected arrow (0x3a99)
     // fits up-right, and the current-system dot stays in the center.

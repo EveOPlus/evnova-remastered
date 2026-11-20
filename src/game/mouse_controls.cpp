@@ -107,21 +107,46 @@ bool CanOpenMouseRadial(const GameState &state) {
 
 void MouseFlightControl::Update(const FlightInput &input,
                                 bool can_start,
-                                bool controls_available) {
+                                bool controls_available,
+                                std::uint64_t now_ms,
+                                SDL_FPoint direction) {
   if (!controls_available) {
     Cancel();
     return;
   }
-  if (input.primary_clicked && can_start && input.primary_held) {
-    steering_ = true;
-    braking_ = false;
+  const bool manual = input.turn_left || input.turn_right || input.thrust ||
+                      input.reverse || input.afterburner || input.face_target ||
+                      input.travel || input.land || input.board;
+  if (manual) {
+    cruising_ = braking_ = click_pending_ = false;
+  }
+  if (input.primary_clicked) {
+    if (!can_start) {
+      click_pending_ = false;
+    } else {
+      const SDL_FPoint point{input.window_mouse_x, input.window_mouse_y};
+      const bool double_click =
+          click_pending_ && now_ms >= last_click_ms_ &&
+          now_ms - last_click_ms_ <= 500 &&
+          std::hypot(point.x - last_click_point_.x,
+                     point.y - last_click_point_.y) <= 12 &&
+          std::isfinite(direction.x) && std::isfinite(direction.y) &&
+          std::hypot(direction.x, direction.y) >= 24;
+      click_pending_ = !double_click && !manual;
+      last_click_ms_ = now_ms;
+      last_click_point_ = point;
+      cruising_ = double_click && !manual;
+      if (cruising_)
+        cruise_direction_ = direction;
+      steering_ = !cruising_ && input.primary_held;
+      braking_ = false;
+    }
   }
   if (steering_ && !input.primary_held) {
     steering_ = false;
     braking_ = true;
   }
-  if (input.turn_left || input.turn_right || input.thrust || input.reverse ||
-      input.afterburner || input.face_target || input.travel || input.land)
+  if (manual)
     braking_ = false;
 }
 

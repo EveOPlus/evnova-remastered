@@ -1385,6 +1385,9 @@ struct GameState {
   // selection. The original uses a global NovaRandom; this is kept local to
   // the state so runs are reproducible when seeded identically.
   std::mt19937 rng{42};
+  // Ghidra DAT_007d17a8: last race winner survives closing the bar game.
+  // This session value is initially zero and is not part of the pilot file.
+  int bar_race_previous_winner = 0;
   // Ghidra g_player_combat_rating_points: aggregate combat-rating score.
   // Produced by Frame_AddCombatRatingPoints (0x0046f1e0, ported in
   // collision.cpp) on player kills; consumed by the afterburner eligibility

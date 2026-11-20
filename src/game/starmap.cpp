@@ -1,6 +1,7 @@
 #include "starmap.hpp"
 #include "navigation_panel.hpp"
 #include "preferences_ui.hpp"
+#include "starmap_clicks.hpp"
 #include "starmap_internal.hpp"
 #include "starmap_route.hpp"
 
@@ -1518,9 +1519,8 @@ void HandleStarmapTabKey(const HypergateMapMode *hypergate,
 
 // ---------------------------------------------------------------------------
 // @port 0x004A4353 65% gameplay,ui,divergence
-// DIVERGENCE(original): Shift-click replaces the original manual route edit
-// with shortest-known-route planning, using the same jump selection/arrival
-// path.
+// DIVERGENCE(original): Shift/double-click plans the shortest known route;
+// triple-click asks the flight caller to follow it through normal jumps.
 // @port 0x004A3AA0 88% gameplay,license,divergence
 // DIVERGENCE(original): wheel input uses the same zoom steps/gates as +/-.
 // Pop out keeps a non-modal chart using the same projection and route planner.
@@ -1673,6 +1673,7 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
   // Shift-click plans a complete route. Tab / Backslash still use the
   // original window event filter (HandleStarmapTabKey).
   std::string route_notice;
+  StarmapClicks clicks;
 
   NovaLog::Info("opening galaxy starmap ({} systems, {} nebulae)",
                 state.scenario.systems.size(),
@@ -1842,6 +1843,8 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
 
     // One batch of raw editable keys / clicks.
     for (std::optional<TextInput> in; (in = platform.PollTextEvent());) {
+      if (in->key != TextKey::primary && in->key != TextKey::none)
+        clicks.Reset();
       switch (in->key) {
       case TextKey::wheel:
         if (std::isfinite(in->wheel_y)) {
@@ -1940,10 +1943,12 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
           }
         }
         if (button_clicked) {
+          clicks.Reset();
           break;
         }
         if (mp.x < panel.x || mp.y < panel.y || mp.x >= panel.x + panel.w ||
             mp.y >= panel.y + panel.h) {
+          clicks.Reset();
           break;
         }
         // Map-panel click (0x004a3cdd action 3): the first VISIBLE system in
@@ -1959,6 +1964,8 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
         // marker for automatic planning. Hypergate picks keep their own gate.
         const bool shift = platform.IsOriginalKeyCodeHeld(0x2a) ||
                            platform.IsOriginalKeyCodeHeld(0x36);
+        bool plot_route = shift;
+        unsigned presses = 0;
         std::int16_t hit = -1;
         bool hit_linked = false;
         for (const MappedSystem &m : mapped) {
@@ -1983,7 +1990,8 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
           }
           bool accept =
               gate_linked || cand.discovered_this_rebuild ||
-              (shift && hypergate == nullptr && cand.discovery_state > 0) ||
+              (plot_route && hypergate == nullptr &&
+               cand.discovery_state > 0) ||
               cid == selected_id ||
               std::any_of(mission_targets.begin(),
                           mission_targets.end(),
@@ -2014,12 +2022,22 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
               }
             }
           }
+          // Remember even a known marker outside the plain-click gate, so
+          // the second press can reach the same destinations as Shift-click.
+          if (presses == 0 && hypergate == nullptr &&
+              (accept || cand.discovery_state > 0)) {
+            presses = clicks.Press(cid, platform.wall_ticks_ms());
+            plot_route = shift || presses >= 2;
+            accept |= plot_route && cand.discovery_state > 0;
+          }
           if (accept) {
             hit = cid;
             hit_linked = gate_linked;
             break;
           }
         }
+        if (presses == 0)
+          clicks.Reset();
         if (hit >= 0) {
           hit = NovaSystem_ResolveVisibleForTravel(state, hit);
         }
@@ -2045,7 +2063,7 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
           // (0x004a48cf skips the Shift arm; 0x004a4e05 writes the pick).
           selected_id = hit;
           hypergate_choice = hit_linked ? hit : -1;
-        } else if (shift) {
+        } else if (plot_route) {
           if (PlotShortestStarmapRoute(state, hit)) {
             selected_id = hit;
             const auto jumps =
@@ -2059,6 +2077,14 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
                           "Route: {} jump{}. J: one. Double-J: full route.",
                           jumps,
                           jumps == 1 ? "" : "s");
+            if (presses == 3 && jumps > 0) {
+              if (flight_view != nullptr && hud != nullptr) {
+                auto result = close_with_selection();
+                result.follow_route = true;
+                return result;
+              }
+              route_notice = "Route ready. Launch, then double-J to follow.";
+            }
           } else {
             route_notice = "No known route available. Existing route kept.";
           }
@@ -2099,6 +2125,8 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
     if (dragging) {
       if ((SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK) != 0U) {
         const SDL_FPoint mp = platform.mouse_position();
+        if (mp.x != drag_last.x || mp.y != drag_last.y)
+          clicks.Reset();
         view.pan_x -= (mp.x - drag_last.x) * view.zoom;
         view.pan_y -= (mp.y - drag_last.y) * view.zoom;
         state.starmap_pan_x = view.pan_x;
@@ -2132,6 +2160,7 @@ StarmapResult NovaStarmap_RunWindow(SdlPlatform &platform,
       panned = true;
     }
     if (panned) {
+      clicks.Reset();
       state.starmap_pan_x = view.pan_x;
       state.starmap_pan_y = view.pan_y;
       overlay_needs_rebuild = true;

@@ -9,6 +9,60 @@
 #include <limits>
 #include <numbers>
 
+TEST_CASE("Double-click cruise keeps its heading and does not brake on release",
+          "[mouse][cruise]") {
+  game::MouseFlightControl control;
+  FlightInput input;
+  input.primary_clicked = true;
+  input.window_mouse_x = 500;
+  input.window_mouse_y = 200;
+  control.Update(input, true, true, 100, {100, -200});
+  control.Update({}, true, true, 150);
+  control.Update(input, true, true, 250, {100, -200});
+  REQUIRE(control.cruising());
+  control.Update({}, false, true, 800, {-200, 0}); // Pointer over the HUD.
+  CHECK(control.steering());
+  CHECK_FALSE(control.braking());
+  CHECK(control.Direction({-200, 0}).x == 100);
+  CHECK(control.Direction({-200, 0}).y == -200);
+  SECTION("keyboard takes over") {
+    input = {};
+    input.reverse = true;
+    control.Update(input, true, true, 900);
+    CHECK_FALSE(control.cruising());
+    CHECK_FALSE(control.braking());
+  }
+  SECTION("new hold restores release-to-brake") {
+    input.primary_held = true;
+    control.Update(input, true, true, 900, {-200, 0});
+    CHECK_FALSE(control.cruising());
+    control.Update({}, true, true, 950);
+    CHECK(control.braking());
+  }
+  SECTION("jump or disability stops cruise") {
+    control.Update({}, true, false, 900);
+    CHECK_FALSE(control.cruising());
+  }
+}
+
+TEST_CASE("Cruise ignores slow clicks, separated clicks, UI and the center",
+          "[mouse][cruise]") {
+  game::MouseFlightControl control;
+  FlightInput input;
+  input.primary_clicked = true;
+  control.Update(input, true, true, 100, {200, 0});
+  bool can_start = true;
+  std::uint64_t when = 200;
+  SDL_FPoint direction{200, 0};
+  SECTION("slow") { when = 601; }
+  SECTION("separated") { input.window_mouse_x = 50; }
+  SECTION("UI") { can_start = false; }
+  SECTION("center") { direction = {1, 1}; }
+  control.Update(input, can_start, true, when, direction);
+  CHECK_FALSE(control.cruising());
+  CHECK_FALSE(control.braking());
+}
+
 TEST_CASE("mouse flight release brakes until movement takes over", "[mouse]") {
   game::MouseFlightControl control;
   FlightInput input;

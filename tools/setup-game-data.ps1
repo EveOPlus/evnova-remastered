@@ -123,21 +123,24 @@ function Install-NovaGameData {
             Install-NovaArchive $package $archive $target
         }
         if (-not (Test-NovaPackageInstalled $package $target)) { throw "Installation is incomplete: $name" }
-        if ($name -eq 'arpia2') {
-            $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
-            if ($ffmpeg) {
-                foreach ($movie in @('gasminer.mov', 'credits.mov')) {
-                    $inputPath = Join-Path $target $movie
-                    $outputPath = $inputPath + '.mpg'
-                    if (Test-Path -LiteralPath $outputPath) { continue }
-                    Write-NovaSetupStatus 'Preparing ARPIA2 movies...'
-                    & $ffmpeg.Source -hide_banner -loglevel error -y -i $inputPath -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -r 25 -c:v mpeg1video -q:v 2 -c:a mp2 -ar 44100 -ac 2 -b:a 192k -f mpeg $outputPath
-                    if ($LASTEXITCODE -ne 0) {
-                        Remove-Item -LiteralPath $outputPath -Force -ErrorAction SilentlyContinue
-                        throw "Movie preparation failed: $movie"
-                    }
+        $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+        if ($ffmpeg) {
+            $movies = if ($name -eq 'community') {
+                @('Nova Files/Race 1.mov', 'Nova Files/Race 2.mov', 'Nova Files/Race 3.mov', 'Nova Files/Race 4.mov')
+            } else { @('gasminer.mov', 'credits.mov') }
+            foreach ($movie in $movies) {
+                $inputPath = Join-Path $target $movie
+                $outputPath = $inputPath + '.mpg'
+                if (Test-Path -LiteralPath $outputPath) { continue }
+                Write-NovaSetupStatus 'Preparing game movies...'
+                & $ffmpeg.Source -hide_banner -loglevel error -y -i $inputPath -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -r 25 -c:v mpeg1video -q:v 2 -c:a mp2 -ar 44100 -ac 2 -b:a 192k -f mpeg $outputPath
+                if ($LASTEXITCODE -ne 0) {
+                    Remove-Item -LiteralPath $outputPath -Force -ErrorAction SilentlyContinue
+                    throw "Movie preparation failed: $movie"
                 }
             }
+        }
+        if ($name -eq 'arpia2') {
             'ARPIA2 core resources, all three extras, and original documentation.' | Set-Content -LiteralPath (Join-Path $target 'installed.txt') -Encoding utf8
         }
     }

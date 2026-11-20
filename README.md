@@ -44,18 +44,24 @@ Ambrosia Software, ATMOS or ARPIA2 release.
 
 ## Features in this fork
 
-- Hold the mouse to steer; release to brake. Right-click radial actions cover
-  hailing, boarding, docking and asteroid mining.
+- Hold the mouse to steer; release to brake. Double-click empty space to
+  cruise at full speed. Right-click radial actions cover hailing, automatic
+  boarding approach, docking and asteroid mining.
+- Mouse-wheel scrolling in outfitter, shipyard, escort and mission menus.
 - Modern resolutions, fullscreen, sharper rendering and independently zoomable
   world, radar and maps. Optional locally generated sprite packs keep the
   original designs; see [remastered graphics](docs/remastered_graphics.md).
-- Shift-click routes. J jumps once; double-J follows the route. A compact
+- Double-click or Shift-click to plot a route; triple-click to start following
+  it. J jumps once; double-J follows the route. A compact
   floating navigation map stays open in flight.
 - System Markets compares every locally traded good and held cargo. Select a
   market column and choose Auto Dock to fly there and land.
 - Save/Open Pilot file pickers, larger dialogs and consistent themed controls.
 - Optional [local mission and hail narration](docs/narration.md), with selectable
-  **Install voices** in Narration settings downloads all four voices and the runtime.
+  voices. **Install voices** in Narration settings downloads all four voices
+  and the runtime.
+- Restored bar gambling: the original Galactic Racing Network, custom wagers,
+  Help, race results and four-times winning payouts.
 - [ARPIA2 compatibility](docs/arpia2.md), with all three optional extras under
   one setting and separate campaign saves.
 - A [direct test driver](docs/windows_test_driver.md) for isolated testing.

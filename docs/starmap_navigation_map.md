@@ -11,14 +11,15 @@ The map also offers **Pop out**, opening a non-modal in-game Navigation panel.
 It shares the map projection, discovery gates, marker assets and route planner.
 It displays the chart with a 20-pixel title bar: drag the title bar to move the
 panel, drag blank chart space to pan, wheel to zoom, and use the title-bar X
-to close; right-click leaves it open. Shift-click
-plots the shortest known route. J jumps once; double-J follows the route. The
+to close; right-click leaves it open. Double-click or Shift-click
+plots the shortest known route; triple-click starts following it. J jumps
+once; double-J follows the route. The
 panel stays visible and recenters after each system arrival. Mouse gestures
 inside it are consumed before spaceflight steering and radar/world zoom.
 Window fitting clamps the whole panel on screen; it is session presentation
 state and does not modify pilot files. Hypergate-only maps omit Pop out.
 
-Shift-click a system to replace the plotted route with the fewest known
+Double-click or Shift-click a system to replace the plotted route with the fewest known
 directed jumps from the current system. The new `starmap_route.cpp` planner
 uses breadth-first search, resolves story-dependent system twins, and only
 expands visited systems' links (the current system is always allowed).
@@ -30,7 +31,9 @@ jump. Press J once to jump one leg, or twice within 450 ms to follow the entire
 route: the input controller flies clear of each system and issues normal jump
 commands until arrival. The second press can join the first jump in progress;
 holding J does not count twice. While following a route, press J again,
-steer, change navigation, or open the map to cancel. If a jump is already in
+steer, or open the full map to cancel. Choosing a different destination in the
+floating map retargets an active route; inspecting the current system, panning,
+zooming, resizing and closing that panel preserve automation. If a jump is already in
 progress, cancellation stops further legs after that jump finishes.
 Low fuel, a disabled ship, or an invalidated link stops automation and retains
 the remaining plan; refuel and double-press J to resume. It does not dock or refuel
@@ -38,6 +41,14 @@ automatically. Arrival consumes each leg and arms the next one.
 Failure leaves the previous route and jump selection intact and displays a
 notice. Shift-clicking the current system, or Clear Route, clears the plan.
 Hypergate destination selection retains its original behavior.
+
+Double/triple-clicks must be on the same system, with no more than 500 ms
+between presses (wall time, independent of game speed). Empty space, another
+control, panning, zooming or arrival resets the gesture. A triple-click replots
+the route and starts the existing flight autopilot only when a usable route
+exists. The full flight map closes; the floating panel remains open. From a
+docked or nested dialog, triple-click only plots and prompts you to launch and
+double-press J. It never launches the ship or refuels automatically.
 
 This intentionally replaces the original Shift-click manual append/truncate
 behavior described below. The runtime route buffer now supports the full

@@ -51,7 +51,8 @@ using evnova::util::OffsetRect;
 [[nodiscard]] std::int16_t
 RunStoreQuantityPrompt(SdlPlatform &platform,
                        std::int16_t max_quantity,
-                       const std::function<void()> &render_background);
+                       const std::function<void()> &render_background,
+                       bool wager = false);
 
 // The generic Outfitter/Shipyard store modal; defined in
 // docked_store_dialog.cpp. Also entered by the Bar's Hire Escort action with

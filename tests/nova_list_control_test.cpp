@@ -1,6 +1,22 @@
 #include "game/nova_list_control.hpp"
+#include "util/scroll_wheel.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <limits>
+
+TEST_CASE("Menu wheel scrolling accumulates trackpad steps and bounds input",
+          "[mission][list][wheel]") {
+  evnova::util::ScrollWheelSteps wheel;
+  CHECK(wheel.Consume(-.25F) == 0);
+  CHECK(wheel.Consume(-.25F) == 0);
+  CHECK(wheel.Consume(-.5F) == -1);
+  CHECK(wheel.Consume(.5F) == 0);
+  CHECK(wheel.Consume(-1) == -1); // Reversal has no stale opposite remainder.
+  CHECK(wheel.Consume(std::numeric_limits<float>::quiet_NaN()) == 0);
+  CHECK(wheel.Consume(std::numeric_limits<float>::infinity()) == 0);
+  CHECK(wheel.Consume(500) == 20);
+  CHECK(wheel.Consume(-500) == -20);
+}
 
 namespace game {
 

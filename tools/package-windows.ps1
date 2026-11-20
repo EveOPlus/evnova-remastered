@@ -63,7 +63,9 @@ EV NOVA COMMUNITY REMASTER
 Open evnova.exe to play. Choose New Pilot to create your pilot.
 
 Hold left mouse: steer toward the pointer and thrust when aligned
-Release left mouse: automatically brake to a complete stop
+Release a left-mouse hold: automatically brake to a complete stop
+Double-click empty space: cruise at full normal speed in that direction
+Radial Board: automatically approach, match speed and align before boarding
 Hold right mouse: contextual actions for ships, planets, or empty space
 Release right mouse: select the highlighted action; center/outside cancels
 Mouse wheel: zoom the world without shrinking the HUD
@@ -71,7 +73,7 @@ Wheel over minimap: zoom radar; wheel in galaxy map: zoom the chart
 System Markets in the radial menu: compare prices; select a port > Auto Dock
 Galaxy map > Pop out: drag its slim title bar to move, wheel to zoom
 Drag blank chart space to pan; drag edges to resize; X closes the panel
-Shift-click a destination in either map to route; double-press J follows it
+Double-click or Shift-click a system to route; triple-click starts following it
 Asteroid radial > Auto-mine: approach, fire mining lasers, scoop the yield
 W: select secondary weapon; hold Left Ctrl: fire selected secondary
 F11: toggle fullscreen (the game starts maximized)
@@ -102,7 +104,7 @@ While following a route, press J again or steer to cancel.
 Low fuel stops automatic travel; refuel and double-press J to resume the route.
 Jump transitions use a quick dark fade, with no white flash.
 Unreachable destinations leave your existing route intact.
-Manual steering or changing navigation cancels automatic jump departure.
+Manual steering cancels automatic jump departure; plotting a new route retargets it.
 Save Pilot / S in the main menu: choose a folder and filename, then save.
 Save and Open Pilot start in the active campaign's normal Pilots folder.
 Save Pilot uses the original About Nova button; About Nova is now in Set Prefs.

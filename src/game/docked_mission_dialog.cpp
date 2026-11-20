@@ -3,6 +3,7 @@
 //
 // Split out of the original docked_dialog.cpp.
 
+#include "../util/scroll_wheel.hpp"
 #include "docked_dialog_internal.hpp"
 
 #include "../brgr_archive.hpp"
@@ -486,7 +487,9 @@ MissionDestinationPreselect(const GameState &state,
 
 } // namespace
 
-// @port 0x0043C470 78% ui,gameplay
+// @port 0x0043C470 78% ui,gameplay,divergence
+// DIVERGENCE(original): wheel input scrolls the mission list without changing
+// selection, using the native scrollbar's bounded row offset.
 // @port 0x004A1130 70% ui
 // Ghidra 0x004a1130 NovaUi_HitTestMissionBbsActionButtons: the Accept (DITL
 // entry 1) / Leave (entry 7) hit-test runs inline in the mouse arm below.
@@ -541,6 +544,7 @@ LandedExit RunMissionBbsWindow(SdlPlatform &platform,
   // window's lifetime.
   NovaListControl list_control(
       layout->list, kMissionListRowPitch, missions.page_zero.size());
+  evnova::util::ScrollWheelSteps wheel;
   const auto move_selection = [&](std::ptrdiff_t delta) {
     if (missions.page_zero.empty()) {
       return;
@@ -664,6 +668,12 @@ LandedExit RunMissionBbsWindow(SdlPlatform &platform,
     };
 
     for (std::optional<TextInput> input; (input = platform.PollTextEvent());) {
+      if (input->key == TextKey::wheel &&
+          (Contains(layout->list, platform.mouse_position()) ||
+           Contains(layout->scrollbar, platform.mouse_position()))) {
+        list_control.ScrollRows(-3 * wheel.Consume(input->wheel_y));
+        continue;
+      }
       if (input->key == TextKey::escape) {
         return LandedExit::kServiceComplete;
       }
@@ -1352,6 +1362,11 @@ NovaMission_RunOfferWindow(SdlPlatform &platform,
       // Return, or the caption mnemonic. DIVERGENCE(original): the port also
       // maps Esc to the decline arm for shortcut consistency; the can't-refuse
       // arm has no decline, so Esc is ignored there.
+      if (input->key == TextKey::wheel &&
+          Contains(window_rect, platform.mouse_position())) {
+        view.ScrollBy(-30.0F * evnova::util::ClampedWheelDelta(input->wheel_y));
+        continue;
+      }
       if (input->key == TextKey::escape) {
         if (normal_arm) {
           return decline_offer();
@@ -1608,7 +1623,9 @@ BuildMissionInfoRows(const GameState &state) {
 
 } // namespace
 
-// @port 0x00446150 88% ui,rendering
+// @port 0x00446150 88% ui,rendering,divergence
+// DIVERGENCE(original): wheel input scrolls the active mission list through
+// the existing scrollbar's clamped row offset.
 // Ghidra 0x00446150 NovaUi_RunMissionComputerWindow (the gameplay command
 // 0x28 window, default key I). Modal over the flight scene: the active-
 // mission list (0x00445dc0 NovaUi_RebuildMissionComputerList), the selected
@@ -1718,6 +1735,7 @@ void NovaMission_RunMissionInfoWindow(
                                  kMissionInfoScrollbarWidth,
                                  layout->list.h};
   NovaListControl list_control(layout->list, kMissionInfoRowPitch, rows.size());
+  evnova::util::ScrollWheelSteps wheel;
   const auto update_list_control = [&]() {
     list_control.SetRowCount(rows.size());
     SDL_FRect content = layout->list;
@@ -1994,6 +2012,12 @@ void NovaMission_RunMissionInfoWindow(
       // @port 0x00446770 65% ui
       // PollSpecialInteractionWindow (0x00446770): Enter/Esc/I close, arrows
       // move the selection; the map command is polled above the loop.
+      if (input->key == TextKey::wheel &&
+          (Contains(layout->list, platform.mouse_position()) ||
+           Contains(info_scrollbar, platform.mouse_position()))) {
+        list_control.ScrollRows(-3 * wheel.Consume(input->wheel_y));
+        continue;
+      }
       if (input->key_code != 0xffff && input->key_code == mission_info_key) {
         exit_requested = true;
         break;

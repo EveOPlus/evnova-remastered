@@ -1,3 +1,4 @@
+#include "game/boarding_plunder.hpp"
 #include "game/flight_automation.hpp"
 #include "game/jump_controls.hpp"
 #include "game/outfit.hpp"
@@ -8,6 +9,76 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
+
+TEST_CASE(
+    "Radial boarding matches a disabled target and aligns before boarding",
+    "[boarding][automation]") {
+  using namespace game;
+  GameState state;
+  state.player.is_active = true;
+  state.player.current_system_id = 0;
+  state.player.ship_class_id = 0;
+  state.player.armor_points = 100;
+  state.player.primary_target_ship_slot = 1;
+  state.scenario.ships.resize(1);
+  auto &cls = state.scenario.ships[0];
+  cls.base_armor = 100;
+  cls.crew = 10;
+  cls.accel = 500;
+  cls.speed = 400;
+  cls.turn_rate = 40;
+  auto &target = state.ShipAt(1);
+  target.is_active = true;
+  target.ship_instance_id = 1;
+  target.current_system_id = 0;
+  target.ship_class_id = 0;
+  target.armor_points = 20;
+  target.heading = 1.57F;
+  SECTION("already alongside but facing across the target") {}
+  SECTION("moving disabled hull") {
+    state.player.pos_x = -800;
+    state.player.pos_y = 300;
+    target.vel_x = .6F;
+    target.vel_y = -.15F;
+  }
+  SECTION("target disappears") {
+    FlightAutomationController controller;
+    REQUIRE(controller.BoardTarget(state, 1, 0));
+    target.is_active = false;
+    FlightInput input;
+    controller.Tick(state, 33, input);
+    CHECK_FALSE(input.board);
+    CHECK(controller.status().phase == FlightAutomationPhase::kFailed);
+    return;
+  }
+  SECTION("undamaged ship is rejected") {
+    target.armor_points = 100;
+    FlightAutomationController controller;
+    CHECK_FALSE(controller.BoardTarget(state, 1, 0));
+    return;
+  }
+  FlightAutomationController controller;
+  REQUIRE(controller.BoardTarget(state, 1, 0));
+  bool boarded = false;
+  for (int tick = 0; tick < 5000; ++tick) {
+    FlightInput input;
+    controller.Tick(state, static_cast<std::uint64_t>(tick * 33), input);
+    if (input.board) {
+      const auto approach = InspectBoardingApproach(state.player, target);
+      CHECK(approach.in_range);
+      CHECK(approach.speed_matched);
+      CHECK(approach.aligned);
+      CHECK_FALSE(input.fire);
+      boarded = true;
+      break;
+    }
+    (void)NovaPlayer_IntegrateMovement(state.player, input, cls, 1.0F);
+    target.pos_x += target.vel_x;
+    target.pos_y += target.vel_y;
+  }
+  CHECK(boarded);
+  CHECK(controller.status().phase == FlightAutomationPhase::kComplete);
+}
 
 using namespace game;
 

@@ -9,6 +9,7 @@
 #include "../log.hpp"
 #include "../sdl_platform.hpp"
 #include "../util/format.hpp"
+#include "../util/scroll_wheel.hpp"
 #include "button_label.hpp"
 #include "compatibility.hpp"
 #include "hud_overlay.hpp"
@@ -1300,16 +1301,21 @@ void ShowStoreSaleBlock(SdlPlatform &platform,
 // entry 3 the editable amount, pre-filled with the maximum. Returns the
 // entered amount clamped to [0, max], or 0 on cancel (ordinal 4). Invalid
 // input resets the field and keeps the prompt open, matching the original.
+// Wager mode (original mode 2) uses the Bet button and amount prompt.
 std::int16_t
 RunStoreQuantityPrompt(SdlPlatform &platform,
                        std::int16_t max_quantity,
-                       const std::function<void()> &render_background) {
+                       const std::function<void()> &render_background,
+                       bool wager) {
   auto loaded = UiWindow_CreateFromDialogResource(platform, 0x3eb);
   if (!loaded)
     return 0;
   UiDialogWindow window = std::move(*loaded);
   NovaFontCache font_cache;
-  UiPanel_SetEntryTextPascal(window, 2, InfoString(0x172));
+  if (wager && !window.items.empty())
+    window.items.front().title =
+        NovaHud_LoadStringEntry(0x96, 0x3b).value_or("Bet");
+  UiPanel_SetEntryTextPascal(window, 2, InfoString(wager ? 0x173 : 0x172));
   UiPanel_SetEntryTextPascal(window, 3, std::to_string(max_quantity));
   UiPanel_SetTextEntrySelectionRange(window, 3, 0, 0xfe);
   ProbeUiAutoClear probe_ui_guard(platform);
@@ -1410,7 +1416,9 @@ RunShipPurchaseConfirmation(SdlPlatform &platform,
 
 } // namespace
 
-// @port 0x0048ea70 65% gameplay,bugfix
+// @port 0x0048ea70 65% gameplay,bugfix,divergence
+// DIVERGENCE(original): wheel steps page the inventory through the same
+// bounded actions as the two arrow buttons, including shipyard/hire mode.
 // BUGFIX(original): the outfitter exit only clamps meters down and never
 // re-runs the arrival auto-refuel (Player_RefuelShipWithCredits 0x004250f0),
 // so fuel capacity or a refueller bought during the visit stays unfilled.
@@ -1564,6 +1572,7 @@ LandedExit RunStoreDialog(SdlPlatform &platform,
                : NovaLanded_CanBuyShip(state, stellar_id, session.selected_id);
   };
   ProbeUiAutoClear probe_ui_guard(platform);
+  evnova::util::ScrollWheelSteps wheel;
   while (!platform.quit_requested()) {
     state.tick_60hz =
         static_cast<std::uint32_t>(platform.gameplay_ticks_ms() * 60 / 1000);
@@ -1663,6 +1672,19 @@ LandedExit RunStoreDialog(SdlPlatform &platform,
                       grid_bright);
     platform.Present();
     for (std::optional<TextInput> input; (input = platform.PollTextEvent());) {
+      if (input->key == TextKey::wheel &&
+          Contains(layout.frame, platform.mouse_position())) {
+        int steps = wheel.Consume(input->wheel_y);
+        while (steps > 0) {
+          session.PagePrevious();
+          --steps;
+        }
+        while (steps < 0) {
+          session.PageNext();
+          ++steps;
+        }
+        continue;
+      }
       if (input->key == TextKey::escape) {
         if (outfit_store)
           NovaLanded_CloseOutfitterSession(state);

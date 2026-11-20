@@ -2,6 +2,7 @@ add_executable(evnova_tests
     arpia_integration_test.cpp
     asteroid_scoop_test.cpp
     asteroid_test.cpp
+    bar_gambling_test.cpp
     cargo_test.cpp
     cicn_test.cpp
     collision_test.cpp
