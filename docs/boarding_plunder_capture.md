@@ -323,6 +323,20 @@ shipped window layout is `docs/reference/boarding.jpg`.
   clear-transient-sprites latch and `Frame_UpdateSpriteDistanceIntensity`
   distance dimming on pods are not modelled.
 
+### Community approach controller
+
+The community radial boarding controller uses the player's actual movement
+model. Inertialess hulls brake their maintained scalar speed with reverse,
+then steer toward a desired velocity that includes the target's drift once.
+They slow for course changes rather than trying to brake by turning and
+thrusting. The shared arrival controller also serves docking and mining.
+Detection uses `NovaPlayer_IsInertialess`: ship Flags2 `0x0040` or an owned
+inertial dampener (outfit ModType 38), as documented in the Nova Bible and
+archived `0x0046df70` decompile. This corrects the community input controller;
+the original movement integrator and boarding eligibility are unchanged.
+Tests use the real integrator and boarding gates at 0.63, 1 and 2 ticks per
+frame, including a moving disabled target.
+
 ## 3. Open questions
 
 - STR# 30000 entry 1 (the "unlicensed ship" note appended after the capture

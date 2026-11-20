@@ -1222,6 +1222,13 @@ TEST_CASE("automatic docking boosts far away and lands without overshooting") {
   cls.speed = 400;
   cls.turn_rate = 40;
   cls.base_armor = 100;
+  SECTION("ordinary ship") {}
+  SECTION("inertialess Dart") {
+    cls.accel = 1250;
+    cls.speed = 600;
+    cls.turn_rate = 100;
+    cls.flags_secondary = 0x40;
+  }
   state.player.ship_class_id = 0;
   state.player.armor_points = 100;
   state.player.fuel_points = 1000;
@@ -1251,6 +1258,7 @@ TEST_CASE("automatic docking boosts far away and lands without overshooting") {
       break;
     }
     PlayerMovementOptions opts;
+    opts.inertialess = NovaPlayer_IsInertialess(state);
     opts.afterburner = input.afterburner;
     opts.afterburner_push_frame_scaled = true;
     if (input.afterburner)
@@ -1260,4 +1268,205 @@ TEST_CASE("automatic docking boosts far away and lands without overshooting") {
   CHECK(boosted);
   CHECK(docked);
   CHECK(state.player.fuel_points >= 100);
+}
+
+TEST_CASE("Vell-os docking brakes with the ship's actual movement model",
+          "[automation][inertialess]") {
+  // Stock ship 173/174/175 and their player variants: Dart, Arrow, Javelin.
+  for (const auto motion : {std::array<float, 3>{1250, 600, 100},
+                            std::array<float, 3>{650, 425, 60},
+                            std::array<float, 3>{500, 375, 40}}) {
+    for (const float dt : {.63F, 1.0F, 2.0F}) {
+      for (const bool dampener : {false, true}) {
+        auto state = AutomationState();
+        state.scenario.ships.resize(1);
+        auto &cls = state.scenario.ships[0];
+        cls.accel = motion[0];
+        cls.speed = motion[1];
+        cls.turn_rate = motion[2];
+        cls.base_armor = 100;
+        cls.flags_secondary = dampener ? 0 : 0x40;
+        if (dampener) {
+          state.scenario.outfits.resize(1);
+          state.scenario.outfits[0].mod_type = 38;
+          state.inventory.outfit_owned_count[0] = 1;
+        }
+        state.player.ship_class_id = 0;
+        state.player.armor_points = 100;
+        state.player.pos_x = -700;
+        state.player.pos_y = 100;
+        state.player.heading = 0;
+        state.player.vel_y = -cls.speed * .01F;
+        state.player.speed = cls.speed * .01F;
+        state.travel.selected_stellar_id = 0x80;
+        state.travel.engage_timer = 1000;
+        REQUIRE(NovaPlayer_IsInertialess(state));
+        FlightAutomationController controller;
+        REQUIRE(controller.LandAt(state, "Earth", 0, 180000, 75));
+        bool docked = false;
+        for (int frame = 0; frame < static_cast<int>(std::ceil(2400 / dt));
+             ++frame) {
+          const float ticks = static_cast<float>(frame) * dt;
+          FlightInput input;
+          controller.Tick(
+              state, static_cast<std::uint64_t>(ticks * 33), input, dt);
+          if (input.land) {
+            CHECK(std::abs(state.player.pos_x) < 75);
+            CHECK(std::abs(state.player.pos_y) < 75);
+            CHECK(std::abs(state.player.vel_x) <= .55F);
+            CHECK(std::abs(state.player.vel_y) <= .55F);
+            docked = true;
+            break;
+          }
+          PlayerMovementOptions opts;
+          opts.inertialess = NovaPlayer_IsInertialess(state);
+          (void)NovaPlayer_IntegrateMovement(
+              state.player, input, cls, dt, opts);
+        }
+        CAPTURE(motion,
+                dt,
+                dampener,
+                state.player.pos_x,
+                state.player.pos_y,
+                state.player.speed);
+        CHECK(docked);
+      }
+    }
+  }
+}
+
+TEST_CASE("Vell-os boarding settles alongside a drifting disabled hull",
+          "[automation][inertialess][boarding]") {
+  for (const float dt : {.63F, 1.0F, 2.0F}) {
+    auto state = AutomationState();
+    state.scenario.ships.resize(1);
+    auto &cls = state.scenario.ships[0];
+    cls.accel = 1250;
+    cls.speed = 600;
+    cls.turn_rate = 100;
+    cls.flags_secondary = 0x40;
+    cls.base_armor = 100;
+    cls.crew = 10;
+    state.player.ship_class_id = 0;
+    state.player.armor_points = 100;
+    state.player.primary_target_ship_slot = 1;
+    state.player.pos_x = -600;
+    state.player.pos_y = 200;
+    state.player.vel_y = -6;
+    state.player.speed = 6;
+    auto &target = state.ShipAt(1);
+    target.is_active = true;
+    target.ship_class_id = 0;
+    target.current_system_id = 0;
+    target.armor_points = 20;
+    target.heading = 1.57F;
+    target.vel_x = .6F;
+    target.vel_y = -.15F;
+    FlightAutomationController controller;
+    REQUIRE(controller.BoardTarget(state, 1, 0));
+    bool boarded = false;
+    for (int frame = 0; frame < static_cast<int>(std::ceil(2400 / dt));
+         ++frame) {
+      const float ticks = static_cast<float>(frame) * dt;
+      FlightInput input;
+      controller.Tick(state, static_cast<std::uint64_t>(ticks * 33), input, dt);
+      if (input.board) {
+        const auto approach = InspectBoardingApproach(state.player, target);
+        CHECK(approach.in_range);
+        CHECK(approach.speed_matched);
+        CHECK(approach.aligned);
+        boarded = true;
+        break;
+      }
+      PlayerMovementOptions opts;
+      opts.inertialess = true;
+      (void)NovaPlayer_IntegrateMovement(state.player, input, cls, dt, opts);
+      target.pos_x += target.vel_x * dt;
+      target.pos_y += target.vel_y * dt;
+    }
+    CAPTURE(dt, state.player.pos_x, state.player.pos_y, state.player.speed);
+    CHECK(boarded);
+  }
+}
+
+TEST_CASE("Inertialess mining matches drift and brakes after completion",
+          "[automation][inertialess][mining]") {
+  for (const float dt : {.63F, 1.0F, 2.0F}) {
+    auto state = MiningState();
+    auto &cls = state.scenario.ships[0];
+    cls.accel = 1250;
+    cls.speed = 600;
+    cls.turn_rate = 100;
+    cls.flags_secondary = 0x40;
+    auto &rock = state.asteroid_pool[0];
+    rock.target_vel_x = .6F;
+    FlightAutomationController controller;
+    REQUIRE(controller.MineAsteroid(state, 0, 0));
+    bool fired = false;
+    for (int frame = 0; frame < static_cast<int>(std::ceil(2400 / dt));
+         ++frame) {
+      const float ticks = static_cast<float>(frame) * dt;
+      FlightInput input;
+      controller.Tick(state, static_cast<std::uint64_t>(ticks * 33), input, dt);
+      if (input.fire_secondary) {
+        CHECK(std::hypot(state.player.vel_x - rock.target_vel_x,
+                         state.player.vel_y - rock.target_vel_y) <= .3F);
+        fired = true;
+        rock.active = false;
+      }
+      if (controller.status().phase == FlightAutomationPhase::kComplete)
+        break;
+      PlayerMovementOptions opts;
+      opts.inertialess = true;
+      (void)NovaPlayer_IntegrateMovement(state.player, input, cls, dt, opts);
+      rock.target_pos_x += rock.target_vel_x * dt;
+    }
+    CAPTURE(dt);
+    CHECK(fired);
+    CHECK(controller.status().phase == FlightAutomationPhase::kComplete);
+    CHECK(state.player.speed <= .05F);
+    CHECK(std::hypot(state.player.vel_x, state.player.vel_y) < .3F);
+  }
+}
+
+TEST_CASE("A full-speed Dart already beside a port brakes and docks",
+          "[automation][inertialess]") {
+  for (const float dt : {.63F, 1.0F, 2.0F}) {
+    auto state = AutomationState();
+    state.scenario.ships.resize(1);
+    auto &cls = state.scenario.ships[0];
+    cls.accel = 1250;
+    cls.speed = 600;
+    cls.turn_rate = 100;
+    cls.flags_secondary = 0x40;
+    cls.base_armor = 100;
+    state.player.ship_class_id = 0;
+    state.player.armor_points = 100;
+    state.player.pos_y = 15;
+    state.player.vel_y = -6;
+    state.player.speed = 6;
+    state.travel.selected_stellar_id = 0x80;
+    state.travel.engage_timer = 1000;
+    FlightAutomationController controller;
+    REQUIRE(controller.LandAt(state, "Earth", 0, 180000, 75));
+    bool docked = false;
+    for (int frame = 0; frame < static_cast<int>(std::ceil(1200 / dt));
+         ++frame) {
+      const float ticks = static_cast<float>(frame) * dt;
+      FlightInput input;
+      controller.Tick(state, static_cast<std::uint64_t>(ticks * 33), input, dt);
+      if (input.land) {
+        CHECK(std::abs(state.player.pos_x) < 75);
+        CHECK(std::abs(state.player.pos_y) < 75);
+        CHECK(std::hypot(state.player.vel_x, state.player.vel_y) < .8F);
+        docked = true;
+        break;
+      }
+      PlayerMovementOptions opts;
+      opts.inertialess = true;
+      (void)NovaPlayer_IntegrateMovement(state.player, input, cls, dt, opts);
+    }
+    CAPTURE(dt);
+    CHECK(docked);
+  }
 }

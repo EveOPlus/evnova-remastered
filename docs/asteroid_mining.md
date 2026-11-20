@@ -39,6 +39,13 @@ both chasing the rock's old location and counting its velocity twice. Cargo
 uses the same interception approach. Pool-target changes and distant wraps
 replan the approach.
 
+The shared arrival controller distinguishes ordinary and inertialess movement.
+Vell-os hulls and ships with an inertial dampener use reverse to reduce scalar
+speed, steer toward the planned world-space velocity, and slow before turning.
+This applies to the intercept, close approach, fragment reposition and final
+stop. Ordinary ships keep velocity-error thrust control. Equipment and firing
+gates are unchanged.
+
 Mining starts only inside the close-range envelope with relative speed at or
 below 0.30 pixels/tick. Unguided shots solve their own relative-motion intercept,
 must arrive before expiry, and check the actual degree-rounded firing line

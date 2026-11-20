@@ -130,7 +130,8 @@ public:
   // moving: approaches (x, y), brakes on relative velocity, and settles within
   // `radius` at the target's velocity. Landing passes a stationary stellar;
   // boarding passes a ship's position and velocity. Only FlightInput is
-  // written.
+  // written. Inertialess hulls brake scalar speed with reverse instead of
+  // turning and applying forward thrust.
   static void MoveToAndStopAt(const PlayerShip &,
                               float x,
                               float y,
@@ -141,7 +142,8 @@ public:
                               float elapsed_ticks = 1.0F,
                               float target_vel_x = 0.0F,
                               float target_vel_y = 0.0F,
-                              bool lead_moving_target = true);
+                              bool lead_moving_target = true,
+                              bool inertialess = false);
 
 private:
   void Fail(std::string);

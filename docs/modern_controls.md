@@ -38,6 +38,13 @@ take priority. A mouse press beginning on the HUD or route map does not start
 steering. Jump, disabled-ship, and docking restrictions remain in the normal
 flight handlers. Steering cancels automatic docking or boarding.
 
+Automatic docking, boarding and mining recognize inertialess ships such as the
+Vell-os Dart, Arrow and Javelin, including ships using an inertial dampener.
+These ships brake with their normal reverse control, reduce speed before a
+tight turn, and match a moving target's drift before boarding or mining.
+Ordinary ships retain their turn-and-thrust braking. Docking clearance,
+boarding alignment and range, fuel and equipment requirements still apply.
+
 Two left presses within 500 ms and 12 screen pixels start cruise. The second
 press locks the direction relative to the ship; moving the pointer afterwards
 does not change it. A fresh hold or keyboard steering takes control again.

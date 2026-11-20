@@ -207,6 +207,7 @@ InterceptTicks(float dx, float dy, float vx, float vy, float speed) {
 
 struct AutomationMotionStats {
   float turn, thrust, speed;
+  bool inertialess;
 };
 
 AutomationMotionStats MotionStats(const GameState &state) {
@@ -225,7 +226,39 @@ AutomationMotionStats MotionStats(const GameState &state) {
   const float turn = std::round(stats.turn_raw * .1F * (1.0F - ionization));
   const float thrust = stats.thrust_raw * .0002F * (1.0F - ionization);
   const float speed = stats.speed_raw * .01F;
-  return {turn, thrust, speed};
+  return {turn, thrust, speed, NovaPlayer_IsInertialess(state)};
+}
+
+// Community guidance for the scalar-speed movement model. Turning and burning
+// cannot brake these hulls: reverse reduces scalar speed, then the existing
+// movement integrator brings velocity toward heading * speed. Reverse also
+// suppresses manual turning, so shed excess speed before steering.
+void MatchInertialessVelocity(const PlayerShip &ship,
+                              float vx,
+                              float vy,
+                              float turn,
+                              float thrust,
+                              float elapsed_ticks,
+                              FlightInput &input) {
+  const float speed = std::hypot(vx, vy);
+  if (speed <= kArriveVelocityDeadband) {
+    input.reverse = ship.speed > 0;
+    return;
+  }
+  const float desired = Bearing(vx, vy);
+  const float delta = std::abs(AngleDelta(ship.heading, desired));
+  const float tolerance = std::max(.025F, thrust * elapsed_ticks * .5F);
+  // Do not carry full speed around a large course correction. Once slowed,
+  // coast through the turn and accelerate only when facing the new course.
+  const float corner_speed = speed * std::max(0.0F, std::cos(delta));
+  if (ship.speed > corner_speed + tolerance) {
+    input.reverse = true;
+    return;
+  }
+  Face(ship.heading, desired, turn, elapsed_ticks, input);
+  if (delta <= (turn * elapsed_ticks + 2) * kDegToRad &&
+      ship.speed < speed - tolerance)
+    input.thrust = true;
 }
 
 bool AutomaticBoostAvailable(const GameState &state, float elapsed_ticks) {
@@ -272,6 +305,7 @@ void ApproachMiningTarget(const PlayerShip &ship,
                           float elapsed_ticks,
                           bool &final_approach,
                           bool boost_available,
+                          bool inertialess,
                           FlightInput &input) {
   const float dx = x - ship.pos_x;
   const float dy = y - ship.pos_y;
@@ -309,6 +343,13 @@ void ApproachMiningTarget(const PlayerShip &ship,
     if (const auto time = InterceptTicks(future_dx, future_dy, vx, vy, speed)) {
       const float goal_vx = future_dx / *time + vx;
       const float goal_vy = future_dy / *time + vy;
+      if (inertialess) {
+        MatchInertialessVelocity(
+            ship, goal_vx, goal_vy, turn, thrust, elapsed_ticks, input);
+        input.afterburner =
+            boost && input.thrust && !input.turn_left && !input.turn_right;
+        return;
+      }
       const float err_x = goal_vx - ship.vel_x;
       const float err_y = goal_vy - ship.vel_y;
       if (std::hypot(err_x, err_y) >
@@ -324,8 +365,18 @@ void ApproachMiningTarget(const PlayerShip &ship,
       return;
     }
   }
-  FlightAutomationController::MoveToAndStopAt(
-      ship, x, y, radius, turn, thrust, input, elapsed_ticks, vx, vy, false);
+  FlightAutomationController::MoveToAndStopAt(ship,
+                                              x,
+                                              y,
+                                              radius,
+                                              turn,
+                                              thrust,
+                                              input,
+                                              elapsed_ticks,
+                                              vx,
+                                              vy,
+                                              false,
+                                              inertialess);
 }
 } // namespace
 
@@ -794,6 +845,7 @@ void FlightAutomationController::TickMining(const GameState &state,
                              elapsed_ticks,
                              mining_final_approach_,
                              AutomaticBoostAvailable(state, elapsed_ticks),
+                             stats.inertialess,
                              input);
       };
   // Collect existing yield first: it expires, whereas the remaining fragments
@@ -838,8 +890,12 @@ void FlightAutomationController::TickMining(const GameState &state,
     }
   }
   if (!asteroid) {
-    Stop(state.player, turn, input, elapsed_ticks);
-    if (std::hypot(state.player.vel_x, state.player.vel_y) < kSettledSpeed) {
+    if (stats.inertialess)
+      input.reverse = state.player.speed > 0;
+    else
+      Stop(state.player, turn, input, elapsed_ticks);
+    if (std::hypot(state.player.vel_x, state.player.vel_y) < kSettledSpeed &&
+        (!stats.inertialess || state.player.speed <= kArriveVelocityDeadband)) {
       status_.phase = FlightAutomationPhase::kComplete;
       status_.detail =
           "Auto-mine finished: " +
@@ -883,7 +939,7 @@ void FlightAutomationController::TickMining(const GameState &state,
   if (nearest < 1.0F) {
     // A fragment can spawn directly on the ship. Create an aiming baseline
     // instead of waiting forever for a positive projectile intercept time.
-    input.turn_left = input.turn_right = input.thrust = false;
+    input.turn_left = input.turn_right = input.thrust = input.reverse = false;
     MoveToAndStopAt(state.player,
                     asteroid->target_pos_x + 20.0F,
                     asteroid->target_pos_y,
@@ -894,7 +950,8 @@ void FlightAutomationController::TickMining(const GameState &state,
                     elapsed_ticks,
                     asteroid->target_vel_x,
                     asteroid->target_vel_y,
-                    false);
+                    false,
+                    stats.inertialess);
     return;
   }
   Ship target;
@@ -922,7 +979,7 @@ void FlightAutomationController::TickMining(const GameState &state,
     aim_y += rel_y * *time;
     desired = Bearing(aim_x, aim_y);
   }
-  input.turn_left = input.turn_right = input.thrust = false;
+  input.turn_left = input.turn_right = input.thrust = input.reverse = false;
   Face(state.player.heading, desired, turn, elapsed_ticks, input);
   // A frame-sized angular tolerance alone fires wide on fast-turning ships.
   // Require the actual outgoing heading to cross the rock's inner footprint.
@@ -1034,10 +1091,30 @@ void FlightAutomationController::MoveToAndStopAt(const PlayerShip &ship,
                                                  float elapsed_ticks,
                                                  float target_vel_x,
                                                  float target_vel_y,
-                                                 bool lead_moving_target) {
+                                                 bool lead_moving_target,
+                                                 bool inertialess) {
   const float dx = x - ship.pos_x;
   const float dy = y - ship.pos_y;
   const float distance = std::hypot(dx, dy);
+  if (inertialess) {
+    const float omega = std::max(1.0F, turn_rate_deg) * kDegToRad;
+    const float closing_speed =
+        distance > radius
+            ? std::min(std::sqrt(2 * std::max(0.0F, thrust) *
+                                 (distance - radius * .5F)),
+                       kTurnRadiusSpeedFraction * omega * distance)
+            : 0;
+    const float scale = distance > 1e-4F ? closing_speed / distance : 0;
+    // Target drift is added once: desired velocity already follows its motion.
+    MatchInertialessVelocity(ship,
+                             target_vel_x + dx * scale,
+                             target_vel_y + dy * scale,
+                             turn_rate_deg,
+                             thrust,
+                             elapsed_ticks,
+                             input);
+    return;
+  }
   // All control is in the target's frame so a moving target (boarding) settles
   // with matched velocity instead of a full stop.
   const float rel_vel_x = ship.vel_x - target_vel_x;
@@ -1162,7 +1239,9 @@ void FlightAutomationController::TickBoarding(const GameState &state,
         input,
         elapsed_ticks,
         target.vel_x,
-        target.vel_y);
+        target.vel_y,
+        true,
+        stats.inertialess);
     return;
   }
   if (!approach.aligned) {
@@ -1299,7 +1378,11 @@ void FlightAutomationController::Tick(const GameState &state,
                   turn,
                   thrust,
                   input,
-                  elapsed_ticks);
+                  elapsed_ticks,
+                  0,
+                  0,
+                  true,
+                  stats.inertialess);
   const float boosted_speed = std::max(
       stats.speed * 1.8F, std::hypot(state.player.vel_x, state.player.vel_y));
   const float braking =
