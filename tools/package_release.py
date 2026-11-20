@@ -67,7 +67,7 @@ def make_package(root: Path, binary: Path, dependency_share: Path, output: Path,
                 "The complete enhanced graphics pack installs automatically (about 555 MB).\n"
                 "It is shared by both campaigns and kept between game updates.\n\n"
                 "New releases download automatically and install on your next launch.\n"
-                "Set Prefs > Extra Prefs controls automatic updates.\n"
+                "Set Prefs > Auto update turns automatic updates on or off (on by default).\n"
                 "Set Prefs > Narration > Install voices adds all four local voices.\n\n"
                 "See CREDITS.md, NOTICE.md and licenses for authors and terms.\n"
                 "No original game data or optional voice models are bundled.\n"

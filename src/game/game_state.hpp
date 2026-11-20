@@ -1442,8 +1442,8 @@ struct GameState {
     bool zoom_command_latch = false;
   } route_map;
 
-  // Remake floating navigation panel; session presentation state, not pilot
-  // data.
+  // Community floating panels. Geometry and visibility persist in the pilot
+  // extension; selections and map centering remain transient.
   struct {
     bool visible = false;
     float x = 24, y = 80;

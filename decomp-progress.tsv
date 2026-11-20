@@ -869,8 +869,8 @@ address	name	impl_file	reimpl_pct	comment
 0x004C7400	NovaPrefs_LoadOrInit	src/game/preferences.cpp	82%	ui,divergence
 0x004C7820	NovaPrefs_SaveToDisk	src/game/preferences.cpp	82%	ui,divergence
 0x004C7D40	PilotFile_RecordLastPilotPath	src/game/pilot_file.cpp	100%	
-0x004C7DB0	PilotFile_SaveGame	src/game/pilot_file.cpp	90%	license
-0x004C7DD0	PilotFile_SaveGameCore	src/game/pilot_file.cpp	92%	license
+0x004C7DB0	PilotFile_SaveGame	src/game/pilot_file.cpp	90%	license,divergence
+0x004C7DD0	PilotFile_SaveGameCore	src/game/pilot_file.cpp	92%	license,divergence
 0x004C9E90	Menu_OpenPilotFileDialog	src/nova_app.cpp	85%	gameplay,ui
 0x004CA120	PilotData_AutoresumeLastPilot	src/game/pilot_file.cpp	90%	gameplay
 0x004CA2C0	PilotDebug_WritePilotLog		0%	debug-only pilotlog.txt dump (licensed runtime only); not reconstructed

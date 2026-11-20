@@ -843,7 +843,7 @@ void DrawExtraPrefsDialog(SdlPlatform &platform,
   DrawCheckBox(platform,
                font_cache,
                OffsetRect({24.0F, 398.0F, 12.0F, 12.0F}, win),
-               "Automatic updates (Windows)",
+               "Auto update",
                automatic_updates,
                false);
   NovaText_Draw(platform,
@@ -854,7 +854,7 @@ void DrawExtraPrefsDialog(SdlPlatform &platform,
                 kControlDisabledText,
                 win.x + 24.0F,
                 win.y + 431.0F,
-                "Downloads quietly; installs on next launch.");
+                "When on: downloads updates; installs on next launch.");
   DrawCheckBox(platform,
                font_cache,
                OffsetRect({24.0F, 444.0F, 12.0F, 12.0F}, win),
@@ -991,6 +991,8 @@ bool NovaMenu_RunExtraPrefsDialog(
       }
       if (hit == ExtraPrefsControl::updates) {
         working.automatic_updates = !working.automatic_updates;
+        commit(); // Let a running download helper observe the change
+                  // immediately.
         continue;
       }
       if (hit == ExtraPrefsControl::afterburner) {

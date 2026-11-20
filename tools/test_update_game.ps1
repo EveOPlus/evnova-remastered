@@ -74,6 +74,38 @@ try {
     foreach ($name in @('Pilots/private.plt','EV Nova/Nova.rez','Narration/voice.onnx')) {
         Assert-Nova ((Get-Content (Join-Path $install $name) -Raw) -eq 'original') 'User data changed'
     }
+    # All helper entry points honor the saved opt-out, even with a pending ZIP.
+    $PreferenceFile = Join-Path $root 'Automatic updates.txt'
+    $InstallDirectory = $install
+    $NoLaunch = $true
+    Assert-Nova (Test-NovaAutoUpdateEnabled) 'Absent preference did not default on'
+    [IO.File]::WriteAllText($PreferenceFile, '0')
+    Assert-Nova (-not (Test-NovaAutoUpdateEnabled)) 'Explicit opt-out ignored'
+    $script:metadataRequests = 0
+    function Invoke-RestMethod { $script:metadataRequests++; throw 'Unexpected network request' }
+    $Mode = 'Check'
+    Invoke-NovaUpdate
+    Assert-Nova ($script:metadataRequests -eq 0) 'Disabled updater contacted GitHub'
+    Write-NovaJson (Join-Path $work 'pending.json') @{version='1.0.4'}
+    $Mode = 'Apply'
+    Invoke-NovaUpdate
+    Assert-Nova (Test-Path (Join-Path $work 'pending.json')) 'Disabled updater consumed pending release'
+    Remove-Item -LiteralPath (Join-Path $work 'pending.json')
+    [IO.File]::WriteAllText($PreferenceFile, '1')
+    Assert-Nova (Test-NovaAutoUpdateEnabled) 'Re-enabled preference ignored'
+    $script:policyRelease = [pscustomobject]@{draft=$false;prerelease=$false;tag_name='v1.0.4';assets=@(
+        [pscustomobject]@{name='evnova-windows-x64.zip';state='uploaded';digest=('sha256:' + ('a'*64));size=1024;
+        browser_download_url='https://github.com/EveOPlus/evnova-remastered/releases/download/v1.0.4/evnova-windows-x64.zip'})}
+    function Invoke-RestMethod {
+        $script:metadataRequests++
+        [IO.File]::WriteAllText($PreferenceFile, '0')
+        return @($script:policyRelease)
+    }
+    $Mode = 'Check'
+    Invoke-NovaUpdate
+    Assert-Nova ($script:metadataRequests -eq 1) 'Enabled updater did not check releases'
+    Assert-Nova (-not (Test-Path (Join-Path $work 'package.zip.part'))) 'Download started after opt-out during check'
+    Assert-Nova (-not (Test-Path (Join-Path $work 'pending.json'))) 'Opt-out staged an update'
     Write-Output 'Updater checks passed: numeric versions, channels, drafts, source restrictions, hashes, safe paths, rollback and user data preservation.'
 } finally {
     $absolute=[IO.Path]::GetFullPath($root)

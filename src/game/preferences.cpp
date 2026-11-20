@@ -830,7 +830,6 @@ namespace {
   case 13: // Running Lights
   case 14: // Weapon Effects
   case 17: // Parallax Starfield
-  case 21: // Check For Updates
     return true;
   default:
     return false;
@@ -956,6 +955,7 @@ void DrawSettingsDialog(SdlPlatform &platform,
                         NovaFontCache &font_cache,
                         const SettingsLayout &layout,
                         const NovaPreferences &prefs,
+                        const NovaExtraPrefs &extra_prefs,
                         const SettingsArtwork &artwork,
                         std::optional<std::size_t> hover,
                         const std::function<void()> &render_background) {
@@ -1018,8 +1018,9 @@ void DrawSettingsDialog(SdlPlatform &platform,
       DrawCheckBox(platform,
                    font_cache,
                    rect,
-                   item.title,
-                   CheckboxChecked(prefs, item.index),
+                   item.index == 21 ? "Auto update" : item.title,
+                   item.index == 21 ? extra_prefs.automatic_updates
+                                    : CheckboxChecked(prefs, item.index),
                    SettingsCheckboxLocked(item.index));
       break;
     case 4: // push button (OK / Key Settings)
@@ -1088,6 +1089,7 @@ void DrawSettingsDialog(SdlPlatform &platform,
 // Ghidra: 0x00488650 Menu_RunSettingsDialog
 // @port 0x00488650 95% ui,divergence
 // DIVERGENCE(original): dark menu theme and About Nova entry in settings.
+// The old locked update checkbox edits the shared community Auto update policy.
 // The Run in a Window checkbox is live and drives
 // SdlPlatform::ApplyWindowMode (SDL_SetWindowFullscreen).
 // TODO(decomp): the original forced Share Processor gate remains unmodelled.
@@ -1145,11 +1147,20 @@ bool NovaMenu_RunSettingsDialog(
                                          platform.ui_scale()));
     const SDL_FPoint mouse = platform.mouse_position();
     const auto hover = HitTestControl(layout, mouse.x, mouse.y);
-    DrawSettingsDialog(
-        platform, font_cache, layout, prefs, artwork, hover, render_background);
+    DrawSettingsDialog(platform,
+                       font_cache,
+                       layout,
+                       prefs,
+                       extra_prefs,
+                       artwork,
+                       hover,
+                       render_background);
     platform.PublishProbeUi(
         "settings",
-        {{"extra_prefs",
+        {{"automatic_updates",
+          platform.current_placement().ToWindowRect(
+              ItemRect(layout.items[21], layout.window))},
+         {"extra_prefs",
           platform.current_placement().ToWindowRect(
               {layout.window.x + kExtraPrefsButtonRect.x,
                layout.window.y + kExtraPrefsButtonRect.y,
@@ -1193,6 +1204,10 @@ bool NovaMenu_RunSettingsDialog(
         case 0: // OK
           commit();
           return true;
+        case 21: // Community updater; the original legacy byte stays separate.
+          extra_prefs.automatic_updates = !extra_prefs.automatic_updates;
+          (void)NovaExtraPrefs_SaveToSystemStore(extra_prefs);
+          break;
         case 15: // Key Settings
           // Preserve the original bottom-to-top window-stack result. The SDL
           // divergence redraws this parent instead of retaining its surface.
@@ -1201,6 +1216,7 @@ bool NovaMenu_RunSettingsDialog(
                                font_cache,
                                layout,
                                prefs,
+                               extra_prefs,
                                artwork,
                                std::nullopt,
                                render_background);
@@ -1213,6 +1229,7 @@ bool NovaMenu_RunSettingsDialog(
                                    font_cache,
                                    layout,
                                    prefs,
+                                   extra_prefs,
                                    artwork,
                                    std::nullopt,
                                    render_background);
@@ -1224,6 +1241,7 @@ bool NovaMenu_RunSettingsDialog(
                                font_cache,
                                layout,
                                prefs,
+                               extra_prefs,
                                artwork,
                                std::nullopt,
                                render_background);
@@ -1235,6 +1253,7 @@ bool NovaMenu_RunSettingsDialog(
                                font_cache,
                                layout,
                                prefs,
+                               extra_prefs,
                                artwork,
                                std::nullopt,
                                render_background);

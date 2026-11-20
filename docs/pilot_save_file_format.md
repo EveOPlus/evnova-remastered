@@ -325,6 +325,36 @@ first explored system; reconstructs saved escorts/fighters; and recomputes
 active mission deadline dates from their saved remaining-day counters. Any
 definition loss reports `kRepairsApplied` while retaining the usable pilot.
 
+## Community floating-window extension
+
+New community saves append an optional 48-byte record after the original
+ship-name NUL terminator. Both original size-prefixed blocks and the ship-name
+string keep their existing encoding. The archived original loader at
+`0x004cb260` reads that final string and does not consume the appended record.
+Older community saves without it load with both panels closed at their default
+positions; they do not inherit another pilot's layout.
+
+| Offset in extension | Bytes | Meaning |
+| --- | --- | --- |
+| 0 | 8 | ASCII `EVNUI001` |
+| 8 | 4 | Little-endian version, currently 1 |
+| 12 | 4 | Little-endian payload size, currently 32 |
+| 16 | 4 | Flags: bit 0 map open, bit 1 missions open |
+| 20 | 20 | Five little-endian IEEE-754 floats: map x, y, width, height, zoom |
+| 40 | 8 | Two little-endian IEEE-754 floats: missions x, y |
+
+`PilotFileCollectFromState` captures the layout for manual Save Pilot and the
+normal automatic saves. `PilotFileApply` restores it per pilot. Save As and
+copying the `.plt` carry the layout without an extra sidecar. Closed panels keep
+their last geometry. The mission panel's dimensions remain automatic (fixed
+width, height based on its rows); only the map supports user resizing.
+
+Unknown versions, truncated extensions and non-finite geometry are ignored
+without discarding the pilot. Numeric bounds are clamped at load, and existing
+panel placement clamps again to the current window. Map selection and pan are
+transient; the restored map centers on the player's current system. Saving in
+an older version can discard the extension.
+
 ## Quirks / open questions
 
 - **Block obfuscation** — `PilotSave_DecodeBlock` uses a symmetric XOR stream

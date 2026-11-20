@@ -15,6 +15,8 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <numbers>
@@ -279,6 +281,22 @@ void PilotFileSeedPersonalityPresence(const ScenarioData &scenario,
 }
 
 void PilotFileApply(const PilotFile &pilot_file, GameState &state) {
+  state.navigation_panel = {};
+  state.mission_panel = {};
+  if (pilot_file.window_layout) {
+    const auto &layout = *pilot_file.window_layout;
+    auto &map = state.navigation_panel;
+    map.visible = layout.map_visible;
+    map.x = layout.map_x;
+    map.y = layout.map_y;
+    map.width = layout.map_width;
+    map.height = layout.map_height;
+    map.zoom = layout.map_zoom;
+    state.mission_panel.visible = layout.missions_visible;
+    state.mission_panel.x = layout.missions_x;
+    state.mission_panel.y = layout.missions_y;
+  }
+
   // The original copies the seeded/loaded pilot-save block into the live
   // globals (PilotData_InitializePlayerState fresh-seed and IntroCinematic_
   // SetupFrames). Apply the tracked subset into GameState.
@@ -452,6 +470,17 @@ void PilotFileApply(const PilotFile &pilot_file, GameState &state) {
 
 PilotFile PilotFileCollectFromState(const GameState &state) {
   PilotFile out;
+  const auto &map = state.navigation_panel;
+  const auto &missions = state.mission_panel;
+  out.window_layout = PilotWindowLayout{map.visible,
+                                        map.x,
+                                        map.y,
+                                        map.width,
+                                        map.height,
+                                        map.zoom,
+                                        missions.visible,
+                                        missions.x,
+                                        missions.y};
   out.pilot_name = state.pilot.first_name;
   out.nickname = state.pilot.last_name;
   out.ship_name = state.player.ship_name;
@@ -599,7 +628,7 @@ PilotFileStellarIndexFromResourceId(std::int16_t stellar_resource_id) {
              : stellar_resource_id;
 }
 
-// @port 0x004C7DD0 92% license
+// @port 0x004C7DD0 92% license,divergence
 // Ghidra 0x004c7dd0 PilotFile_SaveGameCore (row also covers the serialize
 // side): covers the block1/block2 offsets and framing, including active
 // escorts/fighters, përs active/visible flags, paint RGB5, date affixes,
@@ -609,6 +638,8 @@ PilotFileStellarIndexFromResourceId(std::int16_t stellar_resource_id) {
 // and +0x5efe are zero-filled because the original explicitly clears them.
 // Remaining: license-seed class-id behavior. ShipState +0x72 (active secondary
 // bank) is intentionally not written.
+// DIVERGENCE(original): append optional community panel layout after the
+// original ship-name terminator, leaving the original payload intact.
 std::vector<std::byte> PilotFileSerialize(const PilotFile &pilot_file,
                                           std::int16_t jump_dest_stellar) {
   std::vector<std::byte> block1(kBlock1Size, std::byte{0});
@@ -917,6 +948,25 @@ std::vector<std::byte> PilotFileSerialize(const PilotFile &pilot_file,
     out.push_back(static_cast<std::byte>(c));
   }
   out.push_back(std::byte{0});
+  // Community extension: preserve both original blocks and the C-string,
+  // then append a versioned, length-delimited presentation record.
+  if (pilot_file.window_layout) {
+    const auto &layout = *pilot_file.window_layout;
+    for (const char ch : std::string_view{"EVNUI001"})
+      out.push_back(static_cast<std::byte>(ch));
+    append_u32(1);  // Extension version.
+    append_u32(32); // Payload bytes: flags and seven IEEE-754 floats.
+    append_u32((layout.map_visible ? 1U : 0U) |
+               (layout.missions_visible ? 2U : 0U));
+    for (const float value : {layout.map_x,
+                              layout.map_y,
+                              layout.map_width,
+                              layout.map_height,
+                              layout.map_zoom,
+                              layout.missions_x,
+                              layout.missions_y})
+      append_u32(std::bit_cast<std::uint32_t>(value));
+  }
   return out;
 }
 
@@ -1239,11 +1289,52 @@ PilotLoadError PilotFileDeserialize(std::span<const std::byte> bytes,
     out.ship_name.push_back(c);
   }
   out.ship_name.shrink_to_fit();
+  out.window_layout.reset();
+  const auto terminator =
+      std::find(trailer.begin(), trailer.end(), std::byte{});
+  if (terminator != trailer.end()) {
+    const auto extension = trailer.subspan(
+        static_cast<std::size_t>(terminator - trailer.begin()) + 1);
+    constexpr std::string_view magic = "EVNUI001";
+    if (extension.size() >= 48 &&
+        std::memcmp(extension.data(), magic.data(), magic.size()) == 0 &&
+        ReadU32(extension, 8) == 1 && ReadU32(extension, 12) == 32) {
+      PilotWindowLayout layout;
+      const auto flags = ReadU32(extension, 16);
+      layout.map_visible = (flags & 1U) != 0;
+      layout.missions_visible = (flags & 2U) != 0;
+      std::array<float *, 7> fields{&layout.map_x,
+                                    &layout.map_y,
+                                    &layout.map_width,
+                                    &layout.map_height,
+                                    &layout.map_zoom,
+                                    &layout.missions_x,
+                                    &layout.missions_y};
+      bool valid = true;
+      for (std::size_t i = 0; i < fields.size(); ++i) {
+        *fields[i] = std::bit_cast<float>(ReadU32(extension, 20 + 4 * i));
+        valid = valid && std::isfinite(*fields[i]);
+      }
+      if (valid) {
+        layout.map_x = std::clamp(layout.map_x, 0.0F, 32768.0F);
+        layout.map_y = std::clamp(layout.map_y, 0.0F, 32768.0F);
+        layout.map_width = std::clamp(layout.map_width, 240.0F, 8192.0F);
+        layout.map_height = std::clamp(layout.map_height, 180.0F, 8192.0F);
+        layout.map_zoom = std::clamp(layout.map_zoom, .4F, 2.5F);
+        layout.missions_x = std::clamp(layout.missions_x, 0.0F, 32768.0F);
+        layout.missions_y = std::clamp(layout.missions_y, 0.0F, 32768.0F);
+        out.window_layout = layout;
+      } else {
+        NovaLog::Warn(
+            "pilot load: invalid panel geometry; using default layout");
+      }
+    }
+  }
 
   return repairs ? PilotLoadError::kRepairsApplied : PilotLoadError::kOk;
 }
 
-// @port 0x004C7DB0 90% license
+// @port 0x004C7DB0 90% license,divergence
 // Ghidra 0x004c7db0 PilotFile_SaveGame -> 0x004c7dd0 PilotFile_SaveGameCore:
 // builds <nova_files>/<pilot>.plt, serializes the tracked state, writes it,
 // and records the last-pilot path. Remaining: the original license/runtime
@@ -1252,6 +1343,8 @@ PilotLoadError PilotFileDeserialize(std::span<const std::byte> bytes,
 // g_stellar_defs index the original expects. Call sites ported: new-game
 // initial save, the launch tail (also on quit-from-dock), and the post-respawn
 // Strict-Play save.
+// DIVERGENCE(original): community saves also collect floating panel layout
+// for the optional trailer written by PilotFileSerialize.
 bool PilotFileSaveGame(const std::filesystem::path &pilots_dir,
                        const GameState &state,
                        std::int16_t jump_dest_stellar) {

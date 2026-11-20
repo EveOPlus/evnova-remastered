@@ -4,6 +4,7 @@ param(
     [ValidatePattern('^evnova(?:-[a-f0-9]{8})?\.exe$')][string]$ExecutableName = 'evnova.exe',
     [int]$ParentProcessId = 0,
     [switch]$NoLaunch,
+    [string]$PreferenceFile = (Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'Ambrosia Software/EV Nova/Automatic updates.txt'),
     [switch]$LibraryOnly
 )
 
@@ -179,6 +180,46 @@ function Install-NovaUpdate([string]$Root, [string]$Work, [string]$Stage, $Manif
     }
 }
 
+function Test-NovaAutoUpdateEnabled {
+    if (-not (Test-Path -LiteralPath $PreferenceFile)) { return $true }
+    try {
+        $value = [IO.File]::ReadAllText($PreferenceFile).Trim()
+        return $value -eq '1'
+    } catch { return $false }
+}
+
+function Receive-NovaUpdateFile([string]$Url, [string]$Path) {
+    if (-not (Test-NovaAutoUpdateEnabled)) { return $false }
+    $client = New-Object Net.WebClient
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $complete = $false
+    try {
+        $client.Headers['User-Agent'] = 'EVNova-Community-Remaster'
+        $download = $client.DownloadFileTaskAsync([Uri]$Url, $Path)
+        while (-not $download.IsCompleted) {
+            if (-not (Test-NovaAutoUpdateEnabled)) {
+                $client.CancelAsync()
+                try { $download.GetAwaiter().GetResult() } catch { }
+                return $false
+            }
+            if ($timer.Elapsed.TotalSeconds -gt 120) {
+                $client.CancelAsync()
+                try { $download.GetAwaiter().GetResult() } catch { }
+                throw 'Update download timed out'
+            }
+            Start-Sleep -Milliseconds 100
+        }
+        $download.GetAwaiter().GetResult()
+        $complete = Test-NovaAutoUpdateEnabled
+        return $complete
+    } finally {
+        $client.Dispose()
+        if (-not $complete -and (Test-Path -LiteralPath $Path)) {
+            Remove-Item -LiteralPath $Path -Force
+        }
+    }
+}
+
 function Invoke-NovaUpdate {
     $root = [IO.Path]::GetFullPath($InstallDirectory)
     $work = Get-NovaUpdatePath $root '.evnova-update'
@@ -196,6 +237,10 @@ function Invoke-NovaUpdate {
             catch { if ($Mode -eq 'Check') { return }; Start-Sleep -Milliseconds 100 }
         }
         if (-not $lock) { throw 'Another update is still running' }
+        if (-not (Test-NovaAutoUpdateEnabled)) {
+            [IO.File]::WriteAllText((Join-Path $work 'status.txt'), 'Auto update is off.')
+            return
+        }
         $installed = Get-Content -LiteralPath (Get-NovaUpdatePath $root 'release.json') -Raw | ConvertFrom-Json
         if ($installed.schema -ne 1 -or $installed.repository -cne $script:NovaRepository) { throw 'Unrecognized installation' }
         $pending = Join-Path $work 'pending.json'
@@ -207,9 +252,17 @@ function Invoke-NovaUpdate {
             $release = Get-NovaRelease $releases $installed.version
             if (-not $release) { [IO.File]::WriteAllText((Join-Path $work 'status.txt'), 'Up to date.'); return }
             [IO.File]::WriteAllText((Join-Path $work 'status.txt'), ('Downloading ' + $release.version + '...'))
-            Invoke-WebRequest -UseBasicParsing -Uri $release.url -OutFile ($archive + '.part') -TimeoutSec 120
+            if (-not (Receive-NovaUpdateFile $release.url ($archive + '.part'))) {
+                [IO.File]::WriteAllText((Join-Path $work 'status.txt'), 'Auto update is off. Download cancelled.')
+                return
+            }
             $stage = Get-NovaUpdatePath $work ('stage-' + [guid]::NewGuid().ToString('N'))
             $null = Expand-NovaUpdate ($archive + '.part') $stage $release
+            if (-not (Test-NovaAutoUpdateEnabled)) {
+                Remove-Item -LiteralPath ($archive + '.part') -Force
+                [IO.File]::WriteAllText((Join-Path $work 'status.txt'), 'Auto update is off.')
+                return
+            }
             Move-Item -LiteralPath ($archive + '.part') -Destination $archive -Force
             Write-NovaJson $pending $release
             [IO.File]::WriteAllText((Join-Path $work 'status.txt'), ('Version ' + $release.version + ' is ready. Restart to install.'))
@@ -224,6 +277,10 @@ function Invoke-NovaUpdate {
             }
             $stage = Get-NovaUpdatePath $work ('stage-' + [guid]::NewGuid().ToString('N'))
             $manifest = Expand-NovaUpdate $archive $stage $release
+            if (-not (Test-NovaAutoUpdateEnabled)) {
+                [IO.File]::WriteAllText((Join-Path $work 'status.txt'), 'Auto update is off. Downloaded update deferred.')
+                return
+            }
             Install-NovaUpdate $root $work $stage $manifest $ExecutableName
             Remove-Item -LiteralPath $pending -Force
             [IO.File]::WriteAllText((Join-Path $work 'status.txt'), ('Installed ' + $release.version + '.'))

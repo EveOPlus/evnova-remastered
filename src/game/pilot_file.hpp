@@ -34,10 +34,21 @@
 
 namespace game {
 
+// Community-only presentation data appended after the original ship-name
+// terminator. Older pilots have no extension and use the normal panel defaults.
+struct PilotWindowLayout {
+  bool map_visible = false;
+  float map_x = 24, map_y = 80, map_width = 348, map_height = 278;
+  float map_zoom = .75F;
+  bool missions_visible = false;
+  float missions_x = 700, missions_y = 80;
+};
+
 // Mirrors the persistent per-pilot save record. Fields not yet meaningful to
 // GameState (faction reputations, system discovery, missions/FleetState,
 // dates, per-stellar availability) are deliberately not present; see above.
 struct PilotFile {
+  std::optional<PilotWindowLayout> window_layout;
   // The pilot's identity/callsign. On disk the file is <nova_files><name>.plt;
   // in-memory the original keys the pilot-save registry block by this name
   // (ResourceData_AccessByKey 0x63688a72; block+0x32 carries the name/opener).

@@ -15,6 +15,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <span>
 #include <string>
 #include <string_view>
@@ -1097,3 +1098,89 @@ TEST_CASE("PilotData_PickStartingSystem preserves the original RNG draws",
 }
 
 } // namespace
+
+TEST_CASE(
+    "Pilot save carries floating panel layout without changing legacy data") {
+  game::GameState state;
+  state.player.ship_name = "Layout test";
+  state.navigation_panel.visible = true;
+  state.navigation_panel.x = 41;
+  state.navigation_panel.y = 93;
+  state.navigation_panel.width = 512;
+  state.navigation_panel.height = 344;
+  state.navigation_panel.zoom = 1.25F;
+  state.mission_panel.visible = true;
+  state.mission_panel.x = 603;
+  state.mission_panel.y = 277;
+  auto record = PilotFileCollectFromState(state);
+  const auto modern = PilotFileSerialize(record, 0);
+  record.window_layout.reset();
+  const auto original = PilotFileSerialize(record, 0);
+  REQUIRE(modern.size() == original.size() + 48);
+  CHECK(std::equal(original.begin(), original.end(), modern.begin()));
+  REQUIRE(PilotFileDeserialize(modern, record) == PilotLoadError::kOk);
+  REQUIRE(record.window_layout);
+  state.navigation_panel = {};
+  state.mission_panel = {};
+  PilotFileApply(record, state);
+  CHECK(state.navigation_panel.visible);
+  CHECK(state.navigation_panel.x == 41);
+  CHECK(state.navigation_panel.y == 93);
+  CHECK(state.navigation_panel.width == 512);
+  CHECK(state.navigation_panel.height == 344);
+  CHECK(state.navigation_panel.zoom == 1.25F);
+  CHECK(state.mission_panel.visible);
+  CHECK(state.mission_panel.x == 603);
+  CHECK(state.mission_panel.y == 277);
+  CHECK(state.player.ship_name == "Layout test");
+  // A legacy pilot must not inherit another pilot's open windows.
+  REQUIRE(PilotFileDeserialize(original, record) == PilotLoadError::kOk);
+  CHECK_FALSE(record.window_layout);
+  PilotFileApply(record, state);
+  CHECK_FALSE(state.navigation_panel.visible);
+  CHECK_FALSE(state.mission_panel.visible);
+  CHECK(state.navigation_panel.width == 348);
+}
+
+TEST_CASE("Closed panels and invalid presentation trailers preserve playable "
+          "pilots") {
+  auto record = SampleRecord();
+  record.window_layout = game::PilotWindowLayout{};
+  record.window_layout->map_x = 444;
+  const auto original = PilotFileSerialize(record, 0);
+  SECTION("closed panel keeps its last geometry") {
+    REQUIRE(PilotFileDeserialize(original, record) == PilotLoadError::kOk);
+    REQUIRE(record.window_layout);
+    CHECK_FALSE(record.window_layout->map_visible);
+    CHECK(record.window_layout->map_x == 444);
+  }
+  SECTION("truncation or unknown version ignores only the extension") {
+    auto bytes = original;
+    bytes.resize(bytes.size() - 1);
+    REQUIRE(PilotFileDeserialize(bytes, record) == PilotLoadError::kOk);
+    CHECK_FALSE(record.window_layout);
+    CHECK(record.ship_name == "Vengeance");
+    bytes = original;
+    bytes[bytes.size() - 48 + 8] = std::byte{2};
+    REQUIRE(PilotFileDeserialize(bytes, record) == PilotLoadError::kOk);
+    CHECK_FALSE(record.window_layout);
+  }
+  SECTION("non-finite dimensions cannot reach the renderer") {
+    record.window_layout->map_width = std::numeric_limits<float>::quiet_NaN();
+    const auto bytes = PilotFileSerialize(record, 0);
+    REQUIRE(PilotFileDeserialize(bytes, record) == PilotLoadError::kOk);
+    CHECK_FALSE(record.window_layout);
+    CHECK(record.credits == 123456);
+  }
+  SECTION("impossible geometry is clamped") {
+    record.window_layout->map_width = 1;
+    record.window_layout->map_height = -200;
+    record.window_layout->missions_x = -400;
+    const auto bytes = PilotFileSerialize(record, 0);
+    REQUIRE(PilotFileDeserialize(bytes, record) == PilotLoadError::kOk);
+    REQUIRE(record.window_layout);
+    CHECK(record.window_layout->map_width == 240);
+    CHECK(record.window_layout->map_height == 180);
+    CHECK(record.window_layout->missions_x == 0);
+  }
+}

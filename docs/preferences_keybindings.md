@@ -303,9 +303,11 @@ values on load (a legacy `.prf` cannot re-enable a downgrade): Share Processor
 Time (`true`), QuickTime Movies (`true`, inverted = forced off because the
 port has no movie playback), Smoke Trails (`false`,
 inverted), Ship Animations, Engine Glows, Running Lights, Weapon Effects,
-Parallax Starfield, Check For Updates
+Parallax Starfield
 (`true`), and the Brightness slider (`3`). Intro Music, Sound Volume and
-Ambient Sounds stay live. **Hyperspace Effects** is **not** locked: the
+Ambient Sounds stay live. The legacy update byte is still forced in `.prf`,
+but its checkbox now edits the separate, live **Auto update** policy below.
+**Hyperspace Effects** is **not** locked: the
 checkbox is live and, as the CE Read Me describes, the inverted byte selects
 the arrival/jump flash colour (off -> black, the CE `0x00872384` gate; on ->
 the requested white). `prefs.hyperspace_effects` at `.prf +0x78` round-trips
@@ -397,3 +399,14 @@ return, and edge-resolves the cancel command (slot `0x17`) through
 Open: whether `g_hyperspace_effects` keeps the CE raw-input-lock behaviour or is
 purely the effect toggle. The port keeps it as a pure effect toggle (the
 Settings checkbox is live), so the CE raw-input lock remains a divergence.
+
+
+## Community automatic updates
+
+The main Settings checkbox at item 21 is labelled **Auto update**, enabled and
+checked by default. It edits `NovaExtraPrefs::automatic_updates`, also exposed
+in Extra Prefs, and immediately saves the shared `Automatic updates.txt` policy.
+The old inverted `check_for_updates` field remains in the original `.prf` layout
+for compatibility; it no longer controls this checkbox. The Windows helper reads
+the shared policy before checking, throughout downloads and before installing.
+See [automatic updates](automatic_updates.md).

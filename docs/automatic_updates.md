@@ -6,8 +6,11 @@ continues. A verified download is installed on the next launch, before the game
 opens. Source commits alone do not trigger an update: publish a newer numbered
 release with `evnova-windows-x64.zip` attached.
 
-**Set Prefs > Extra Prefs > Automatic updates (Windows)** turns this off or on.
-Turning it off also defers a downloaded update. Offline or failed checks leave
+**Set Prefs > Auto update** is on by default and can be turned off. The same
+switch is also available in Extra Prefs; both save the shared choice immediately.
+When off, launch does not check or download releases, an active download is
+cancelled and any already downloaded update is deferred. Re-enable it to resume
+normal updating on the next launch. Offline or failed checks leave
 the current version playable. The helper reports status in
 `.evnova-update/status.txt` beside the executable. Read-only installations need
 to be moved to a writable folder, or updated by extracting the release manually.

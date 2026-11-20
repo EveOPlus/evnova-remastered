@@ -2,6 +2,7 @@
 
 #include "game/preferences_extra.hpp"
 #include "log.hpp"
+#include "nova_paths.hpp"
 
 #include <SDL3/SDL.h>
 #include <filesystem>
@@ -18,6 +19,10 @@ bool NovaUpdate_OnLaunch() {
     (void)game::NovaExtraPrefs_LoadFromSystemStore(prefs);
     if (!prefs.automatic_updates)
       return false;
+    const auto shared = NovaPaths::SharedSupportDirectory();
+    if (!shared)
+      return false;
+    const auto preference_arg = (*shared / "Automatic updates.txt").string();
     const char *base = SDL_GetBasePath();
     if (!base)
       return false;
@@ -54,6 +59,8 @@ bool NovaUpdate_OnLaunch() {
                           executable.c_str(),
                           "-ParentProcessId",
                           pid.c_str(),
+                          "-PreferenceFile",
+                          preference_arg.c_str(),
                           "-Mode",
                           pending ? "Apply" : "Check",
                           nullptr};

@@ -227,3 +227,9 @@ area, explain delayed appearances and blocked docking, and update as the story
 advances. Scroll the description for longer clues. **Pop Out** keeps them in the
 compact tracker; the small arrow uses normal Auto Pilot for a known accessible
 port. A lead itself does not grant docking clearance or force a mission offer.
+
+
+Pilot saves remember which floating map/mission panels are open and their
+positions. The map also keeps its resized dimensions and zoom. Loading the
+pilot restores that layout, adjusted to fit the current game window. The
+mission tracker keeps its automatic size based on the visible rows.

@@ -529,7 +529,9 @@ While the mode is set, the map behaves like this:
 The floating panel resizes from its edges or the bottom-right grip. The chart
 expands to show more space at the same zoom; its title bar and close button keep
 their normal size. Minimum size is 240 by 180 logical points, and dragging is
-clamped to the game window. Position and size persist for the current session.
+clamped to the game window. Each pilot save remembers whether the panel is open,
+its position, size and zoom. Loading restores it within the current window and
+centers the chart on the current system. See the [save extension](pilot_save_file_format.md#community-floating-window-extension).
 
 The community renderer keeps the original red mission arrow visible up-left
 of a system even when that system is selected or is the player's current
