@@ -73,27 +73,22 @@ def check() -> None:
         passed("hold left mouse steers and thrusts toward pointer", heading=turned["heading"])
         moving = wait_for(d.state, lambda s: math.hypot(s['vel_x'], s['vel_y']) > 2)
         d.mouse(x, y, button="left", down=False)
-        stopped = wait_for(d.state, lambda s: math.hypot(s['vel_x'], s['vel_y']) < .001)
-        assert abs(stopped['heading'] - moving['heading']) < .1
+        released = d.state()
         d.mouse(40, 40)
-        time.sleep(0.3)
-        assert math.hypot(d.state()['vel_x'], d.state()['vel_y']) < .001
-        passed("release brakes to a complete stop without turning", before=moving, after=stopped)
+        time.sleep(1.5)
+        coasting = d.state()
+        assert math.hypot(coasting['vel_x'], coasting['vel_y']) > math.hypot(released['vel_x'], released['vel_y']) * .9
+        assert abs(coasting['heading'] - moving['heading']) < .1
+        assert math.hypot(coasting['pos_x'] - released['pos_x'], coasting['pos_y'] - released['pos_y']) > 20
+        passed("release coasts without turning or braking", before=released, after=coasting)
 
-        d.mouse(x, y, button="left", down=True)
-        wait_for(d.state, lambda s: s['vel_x'] > 1)
-        d.mouse(x, y, button="left", down=False)
         d.hold(['Up'])
         wait_for(d.state, lambda s: s['vel_x'] > 2)
         d.hold(['Up'], down=False)
-        coasting = d.state()['vel_x']
+        speed = d.state()['vel_x']
         time.sleep(.3)
-        assert d.state()['vel_x'] > coasting * .9
-        passed("keyboard flight overrides automatic braking")
-        d.mouse(x, y, button="left", down=True)
-        time.sleep(.1)
-        d.mouse(x, y, button="left", down=False)
-        wait_for(d.state, lambda s: math.hypot(s['vel_x'], s['vel_y']) < .001)
+        assert d.state()['vel_x'] > speed * .9
+        passed("keyboard thrust retains normal coasting")
 
         # Queue press and release together: the flight event drain must leave
         # the release for the radial, including menus shifted at screen edges.

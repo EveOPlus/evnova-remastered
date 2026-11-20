@@ -11,7 +11,6 @@ struct FlightInput;
 
 namespace game {
 struct GameState;
-struct Ship;
 class SpaceflightView;
 class NovaFontCache;
 
@@ -42,7 +41,7 @@ public:
               std::uint64_t now_ms = 0,
               SDL_FPoint direction = {});
 
-  void Cancel() { steering_ = braking_ = cruising_ = click_pending_ = false; }
+  void Cancel() { steering_ = cruising_ = click_pending_ = false; }
 
   [[nodiscard]] bool steering() const { return steering_ || cruising_; }
 
@@ -52,21 +51,14 @@ public:
     return cruising_ ? cruise_direction_ : pointer_direction;
   }
 
-  [[nodiscard]] bool braking() const { return braking_; }
-
 private:
   bool steering_ = false;
-  bool braking_ = false;
   bool cruising_ = false;
   bool click_pending_ = false;
   std::uint64_t last_click_ms_ = 0;
   SDL_FPoint last_click_point_{};
   SDL_FPoint cruise_direction_{};
 };
-
-// Remake braking assist: reduce velocity along its own vector, with no turn
-// or overshoot. Deceleration is in world units per normalized 30 Hz tick.
-void ApplyMouseBraking(Ship &ship, float deceleration, float elapsed_ticks);
 
 // Direction is relative to the ship in window points. Keyboard steering wins.
 bool ApplyMouseSteering(float heading,

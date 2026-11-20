@@ -3,6 +3,7 @@
 #include "game/game_state.hpp"
 #include "game/mouse_controls.hpp"
 #include "game/ship_ai.hpp"
+#include "game/spaceflight.hpp"
 #include "sdl_platform.hpp"
 
 #include <cmath>
@@ -22,7 +23,6 @@ TEST_CASE("Double-click cruise keeps its heading and does not brake on release",
   REQUIRE(control.cruising());
   control.Update({}, false, true, 800, {-200, 0}); // Pointer over the HUD.
   CHECK(control.steering());
-  CHECK_FALSE(control.braking());
   CHECK(control.Direction({-200, 0}).x == 100);
   CHECK(control.Direction({-200, 0}).y == -200);
   SECTION("keyboard takes over") {
@@ -30,14 +30,13 @@ TEST_CASE("Double-click cruise keeps its heading and does not brake on release",
     input.reverse = true;
     control.Update(input, true, true, 900);
     CHECK_FALSE(control.cruising());
-    CHECK_FALSE(control.braking());
   }
-  SECTION("new hold restores release-to-brake") {
+  SECTION("new hold replaces cruise and release ends steering") {
     input.primary_held = true;
     control.Update(input, true, true, 900, {-200, 0});
     CHECK_FALSE(control.cruising());
     control.Update({}, true, true, 950);
-    CHECK(control.braking());
+    CHECK_FALSE(control.steering());
   }
   SECTION("jump or disability stops cruise") {
     control.Update({}, true, false, 900);
@@ -60,87 +59,66 @@ TEST_CASE("Cruise ignores slow clicks, separated clicks, UI and the center",
   SECTION("center") { direction = {1, 1}; }
   control.Update(input, can_start, true, when, direction);
   CHECK_FALSE(control.cruising());
-  CHECK_FALSE(control.braking());
 }
 
-TEST_CASE("mouse flight release brakes until movement takes over", "[mouse]") {
+TEST_CASE("mouse release coasts with ordinary and inertialess physics",
+          "[mouse]") {
   game::MouseFlightControl control;
+  game::PlayerShip ship;
+  game::ShipClass cls;
+  cls.accel = 1250;
+  cls.speed = 600;
+  cls.turn_rate = 100;
+  game::PlayerMovementOptions opts;
+  SECTION("ordinary ship") { opts.inertialess = false; }
+  SECTION("Vell-os Dart") { opts.inertialess = true; }
+
   FlightInput input;
   input.primary_clicked = input.primary_held = true;
-  control.Update(input, true, true);
+  control.Update(input, true, true, 100, {0, -200});
   REQUIRE(control.steering());
+  for (int frame = 0; frame < 60; ++frame) {
+    input = {};
+    REQUIRE(game::ApplyMouseSteering(ship.heading, {0, -200}, 0.1F, input));
+    (void)game::NovaPlayer_IntegrateMovement(ship, input, cls, 0.63F, opts);
+  }
+  REQUIRE(ship.vel_y < -1);
+  const float speed = ship.speed;
+  const float velocity = ship.vel_y;
+  const float position = ship.pos_y;
+  // Releasing over a HUD/panel must end the hold without adding any input.
+  control.Update({}, false, true, 2000);
+  REQUIRE_FALSE(control.steering());
+  REQUIRE_FALSE(control.cruising());
+  for (int frame = 0; frame < 150; ++frame) {
+    control.Update({}, true, true, 2100 + frame * 21);
+    REQUIRE_FALSE(control.steering());
+    (void)game::NovaPlayer_IntegrateMovement(ship, {}, cls, 0.63F, opts);
+  }
+  CHECK(ship.speed == speed);
+  CHECK(ship.vel_y == velocity);
+  CHECK(ship.pos_y < position - 100);
+  CHECK(ship.heading == 0);
+
   input = {};
-  control.Update(input, true, true);
+  input.primary_clicked = input.primary_held = true;
+  control.Update(input, true, true, 6000, {200, 0});
+  CHECK(control.steering());
+  CHECK_FALSE(control.cruising());
+  control.Update({}, true, false, 6100);
   CHECK_FALSE(control.steering());
-  REQUIRE(control.braking());
-  control.Update(input, true, true);
-  CHECK(control.braking());
-  SECTION("a fresh mouse hold resumes flight") {
-    input.primary_clicked = input.primary_held = true;
-    control.Update(input, true, true);
-    CHECK(control.steering());
-    CHECK_FALSE(control.braking());
-  }
-  SECTION("keyboard flight overrides braking") {
-    input.thrust = true;
-    control.Update(input, true, true);
-    CHECK_FALSE(control.braking());
-    control.Update({}, true, true);
-    CHECK_FALSE(control.braking());
-  }
-  SECTION("jump and disabled controls clear the assist") {
-    control.Update({}, true, false);
-    CHECK_FALSE(control.steering());
-    CHECK_FALSE(control.braking());
-  }
 }
 
-TEST_CASE("HUD clicks and quick taps do not arm mouse braking", "[mouse]") {
+TEST_CASE("HUD clicks and quick taps do not start mouse flight", "[mouse]") {
   game::MouseFlightControl control;
   FlightInput input;
   input.primary_clicked = input.primary_held = true;
   control.Update(input, false, true);
   control.Update({}, true, true);
   CHECK_FALSE(control.steering());
-  CHECK_FALSE(control.braking());
   input.primary_held = false;
   control.Update(input, true, true);
-  CHECK_FALSE(control.braking());
-}
-
-TEST_CASE("mouse braking stops diagonally without reversing or turning",
-          "[mouse]") {
-  game::Ship ship;
-  ship.vel_x = 3;
-  ship.vel_y = 4;
-  ship.speed = 5;
-  ship.heading = 1;
-  game::ApplyMouseBraking(ship, 1, 1);
-  CHECK(std::abs(ship.vel_x - 2.4F) < 0.0001F);
-  CHECK(std::abs(ship.vel_y - 3.2F) < 0.0001F);
-  CHECK(ship.speed == 4);
-  CHECK(ship.heading == 1);
-  game::ApplyMouseBraking(ship, 2, 3);
-  CHECK(ship.vel_x == 0);
-  CHECK(ship.vel_y == 0);
-  CHECK(ship.speed == 0);
-  game::ApplyMouseBraking(ship, 2, 1);
-  CHECK(ship.vel_x == 0);
-  CHECK(ship.vel_y == 0);
-}
-
-TEST_CASE("mouse braking scales with elapsed simulation time", "[mouse]") {
-  game::Ship one;
-  one.vel_x = -6;
-  one.vel_y = 8;
-  one.speed = 10;
-  auto split = one;
-  game::ApplyMouseBraking(one, 0.5F, 3);
-  for (int i = 0; i < 3; ++i)
-    game::ApplyMouseBraking(split, 0.5F, 1);
-  CHECK(std::abs(one.vel_x - split.vel_x) < 0.0001F);
-  CHECK(std::abs(one.vel_y - split.vel_y) < 0.0001F);
-  CHECK(one.speed == split.speed);
+  CHECK_FALSE(control.steering());
 }
 
 TEST_CASE("mouse flight turns toward the pointer before applying thrust",
@@ -246,7 +224,6 @@ TEST_CASE(
   input.primary_clicked = input.primary_held = true;
   flight.Update(input, true, !game::NovaAiShip_IsDisabled(state, state.player));
   CHECK_FALSE(flight.steering());
-  CHECK_FALSE(flight.braking());
   SECTION("jump engagement keeps the modal closed") {
     state.travel.engaging = true;
     CHECK_FALSE(game::CanOpenMouseRadial(state));

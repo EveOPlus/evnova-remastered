@@ -66,7 +66,7 @@ python -u tools/check_modern_controls.py
 ```
 
 The second command expects a live pilot in flight and records assertions and
-renderer screenshots in `analysis/driver/`. It checks hold steering, release braking,
+renderer screenshots in `analysis/driver/`. It checks hold steering, release coasting,
 keyboard override, right-button release selection and cancellation,
 zoom, radial placement, pause/dismissal, the real map, automatic docking,
 ship targeting, and planet targeting. It uses ordinary game input throughout.

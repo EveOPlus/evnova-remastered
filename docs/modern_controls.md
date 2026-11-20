@@ -6,7 +6,7 @@ Original keyboard bindings still work.
 | Control | Action |
 | --- | --- |
 | Hold left mouse in space | Turn toward the cursor and thrust once aligned |
-| Release a left-mouse hold | Automatically brake to a complete stop |
+| Release a left-mouse hold | Stop mouse steering/thrust and coast |
 | Double-click empty space | Turn that way and cruise at normal full speed without braking |
 | Hold right mouse over a ship | Target, hail, or board it |
 | Hold right mouse over a planet/station | Target, hail, or automatically approach and dock |
@@ -50,12 +50,20 @@ press locks the direction relative to the ship; moving the pointer afterwards
 does not change it. A fresh hold or keyboard steering takes control again.
 Cruise uses normal thrust and top speed, without automatically using afterburner.
 
-Releasing a mouse flight hold applies a braking assist along the velocity vector
-without turning the ship. Deceleration follows the ship's effective thrust and
-ionization penalty, clamps at zero, and handles inertialess scalar speed too.
-A fresh flight hold or keyboard movement cancels braking immediately. HUD clicks
-do not arm it; jumps, disabled ships, and automatic docking retain control of
-their own movement.
+Releasing a mouse flight hold stops the mouse steering and thrust inputs and
+lets the ship coast under its normal physics, including when released over a
+HUD or floating panel. It does not apply a braking assist. This applies to both
+ordinary and inertialess ships and leaves the pointer free for combat targeting.
+A fresh hold resumes steering. Automatic docking, boarding, mining and jump
+preparation still perform their own braking.
+
+For a Vell-os Dart, Down reduces speed to zero without turning or flying
+backward. Releasing Up alone does not normally brake it: the original Windows
+manual-flight branch (0x0044c8d0) retains scalar speed, and the inertialess
+steering helper (0x0043b020) redirects velocity toward its heading at a finite
+thrust-scaled rate. It is not an instantaneous direction change. The special
+fire-restricted state has a separate speed decay. Ordinary ships retain their
+original Down-to-face-backward, Up-to-brake controls.
 
 The radial menu pauses the flight simulation while choosing. It uses the same
 ship and stellar hit tests as targeting, stays inside the current window, and

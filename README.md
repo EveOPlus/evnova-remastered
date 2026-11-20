@@ -45,7 +45,7 @@ Ambrosia Software, ATMOS or ARPIA2 release.
 
 ## Features in this fork
 
-- Hold the mouse to steer; release to brake. Double-click empty space to
+- Hold the mouse to steer; release to coast. Double-click empty space to
   cruise at full speed. Right-click radial actions cover hailing, automatic
   boarding approach, docking and asteroid mining.
 - Mouse-wheel scrolling in outfitter, shipyard, escort and mission menus.

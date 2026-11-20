@@ -66,7 +66,7 @@ re-enabling it required no source patch or replacement executable.
 
 ## Community behaviors to preserve
 
-- Hold left mouse to steer; release brakes. Double-click space locks a cruise
+- Hold left mouse to steer; release coasts. Double-click space locks a cruise
   direction at normal full speed. A new hold or keyboard steering takes over.
 - Right-button hold opens the contextual radial; release selects or cancels.
   Disabled players retain menu access, subject to normal movement restrictions.
