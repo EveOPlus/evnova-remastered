@@ -16,6 +16,8 @@ namespace game {
 struct SystemMarket {
   std::string name;
   TradeCenterSession prices;
+  int mission_count = 0;
+  bool has_market = true;
 };
 
 [[nodiscard]] std::vector<SystemMarket>

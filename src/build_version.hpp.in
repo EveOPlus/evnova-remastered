@@ -1,0 +1,15 @@
+#pragma once
+
+#include <fmt/format.h>
+#include <string>
+#include <string_view>
+
+namespace evnova {
+inline constexpr std::string_view kVersion = "@EVNOVA_VERSION@";
+inline constexpr std::string_view kBuildRevision = "@EVNOVA_BUILD_REVISION@";
+inline constexpr std::string_view kBuildType = "@CMAKE_BUILD_TYPE@";
+inline std::string BuildLabel() {
+  return fmt::format("Community Remaster {} (build {}{})", kVersion,
+                     kBuildRevision.substr(0, 12), kBuildRevision.ends_with("-dirty") ? "-dirty" : "");
+}
+} // namespace evnova

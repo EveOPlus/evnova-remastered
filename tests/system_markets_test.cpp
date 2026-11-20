@@ -4,6 +4,70 @@
 
 #include <algorithm>
 
+TEST_CASE("Market mission badges follow the current destination",
+          "[markets][missions]") {
+  game::GameState state;
+  state.player.current_system_id = 0;
+  state.scenario.systems.resize(1);
+  state.scenario.systems[0].nav_defs.fill(-1);
+  state.scenario.systems[0].nav_defs[0] = 0x80;
+  state.scenario.systems[0].nav_defs[1] = 0x81;
+  state.scenario.stellars.resize(2);
+  for (auto &stellar : state.scenario.stellars) {
+    stellar.flags = 2;
+    stellar.is_available = true;
+    stellar.system_id = 0;
+  }
+  state.scenario.stellars[0].name = "Outbound port";
+  state.scenario.stellars[1].name = "Return port";
+  auto &mission = state.active_missions[0];
+  auto &flags = state.active_mission_runtime_flags[0];
+  mission.travel_stellar_id = 0;
+  mission.return_stellar_id = 1;
+  flags.is_active = true;
+  int outbound = 1, returning = 0;
+  SECTION("outbound objective") {}
+  SECTION("return leg") {
+    flags.travel_stellar_reached = true;
+    outbound = 0;
+    returning = 1;
+  }
+  SECTION("failed mission") {
+    flags.is_failed = true;
+    outbound = 0;
+  }
+  SECTION("inactive mission") {
+    flags.is_active = false;
+    outbound = 0;
+  }
+  SECTION("hidden destination") {
+    mission.flags_primary = 2;
+    outbound = 0;
+  }
+  SECTION("unavailable return retains map destination") {
+    flags.travel_stellar_reached = true;
+    state.scenario.stellars[1].is_available = false;
+  }
+  SECTION("several missions at one port") {
+    state.active_missions[1] = mission;
+    state.active_mission_runtime_flags[1] = flags;
+    outbound = 2;
+  }
+  SECTION("mission stop without a commodity exchange") {
+    state.scenario.stellars[0].flags = 1;
+    const auto stops = game::BuildSystemMarkets(state);
+    REQUIRE(stops.size() == 2);
+    CHECK_FALSE(stops[0].has_market);
+    CHECK(std::all_of(stops[0].prices.rows.begin(),
+                      stops[0].prices.rows.end(),
+                      [](const auto &row) { return row.price == 0; }));
+  }
+  const auto markets = game::BuildSystemMarkets(state);
+  REQUIRE(markets.size() == 2);
+  CHECK(markets[0].mission_count == outbound);
+  CHECK(markets[1].mission_count == returning);
+}
+
 TEST_CASE("System market comparison lists each local trading port once",
           "[markets][trade]") {
   game::GameState state;

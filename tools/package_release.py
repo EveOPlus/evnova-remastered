@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 from pathlib import Path
 import tempfile
 import zipfile
@@ -14,7 +16,8 @@ DOCUMENTS = (
     "docs/game_data_setup.md", "docs/modern_controls.md", "docs/arpia2.md",
     "docs/narration.md", "docs/remastered_graphics.md", "docs/local_windows_build.md",
     "tools/setup-game-data.ps1", "tools/game-downloads.json",
-    "tools/setup-narration.ps1", "tools/nova_narrator.py",
+    "tools/setup-narration.ps1", "tools/narration-downloads.json", "tools/nova_narrator.py",
+    "tools/update-game.ps1", "docs/automatic_updates.md",
     "src/third_party/README.md", "src/third_party/dr_mp3.h", "src/third_party/pl_mpeg.h",
 )
 REQUIRED_NOTICES = {"sdl3", "sdl3-ttf", "freetype", "harfbuzz", "fmt", "libpng", "zlib"}
@@ -32,7 +35,13 @@ def notice_files(root: Path, dependency_share: Path) -> dict[str, Path]:
     return files
 
 
-def make_package(root: Path, binary: Path, dependency_share: Path, output: Path) -> None:
+def make_package(root: Path, binary: Path, dependency_share: Path, output: Path,
+                 build_info: dict | None = None) -> None:
+    if build_info is None:
+        build_info = json.loads((binary.resolve().parents[1] / "build-info.json").read_text())
+    version = (root / "VERSION").read_text().strip()
+    if build_info["version"] != version or build_info["probe"] != "OFF":
+        raise ValueError("Package requires a matching versioned player build with its test driver disabled")
     files = {name: root / name for name in DOCUMENTS}
     files["evnova.exe"] = binary
     files.update(notice_files(root, dependency_share))
@@ -44,19 +53,29 @@ def make_package(root: Path, binary: Path, dependency_share: Path, output: Path)
     # when building from a developer's populated checkout.
     with tempfile.TemporaryDirectory(prefix="evnova-release-", dir=output.parent) as temporary:
         archive = Path(temporary) / "release.zip"
-        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as package:
-            for name, source in sorted(files.items()):
-                package.write(source, "EV Nova Remastered/" + name)
-            package.writestr("EV Nova Remastered/START HERE.txt", (
-                "EV Nova Remastered - community preview\n\n"
+        payloads = {name: source.read_bytes() for name, source in sorted(files.items())}
+        payloads["START HERE.txt"] = (
+                "EV Nova Community Remaster - unofficial community preview\n"
+                "Developed with AI tooling, including OpenAI Codex.\n\n"
                 "Extract this whole folder, then run evnova.exe.\n"
                 "Choose Download and Set Up to fetch Community Edition and ARPIA2.\n"
                 "Keep the tools folder beside the game. Internet: about 127 MB.\n"
                 "You can also locate an existing EV Nova.exe installation.\n\n"
+                "New releases download automatically and install on your next launch.\n"
+                "Set Prefs > Extra Prefs controls automatic updates.\n"
+                "Set Prefs > Narration > Install voices adds all four local voices.\n\n"
                 "See CREDITS.md, NOTICE.md and licenses for authors and terms.\n"
                 "No original game data or optional voice models are bundled.\n"
                 "Source and help: https://github.com/EveOPlus/evnova-remastered\n"
-            ))
+            ).encode("utf-8")
+        manifest = dict(schema=1, repository="EveOPlus/evnova-remastered",
+                        version=version, build=build_info,
+                        files=[dict(path=name, sha256=hashlib.sha256(data).hexdigest())
+                               for name, data in sorted(payloads.items())])
+        payloads["release.json"] = json.dumps(manifest, indent=2).encode("utf-8")
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as package:
+            for name, data in payloads.items():
+                package.writestr("EV Nova Remastered/" + name, data)
         archive.replace(output)
 
 

@@ -42,7 +42,9 @@ constexpr float kExtraValueWidth = 84.0F;
 // up and down targets meet but never overlap.
 constexpr float kExtraArrowHitPadX = 8.0F;
 constexpr float kExtraArrowHitPadY = 5.0F;
-constexpr float kExtraWindowHeight = 440.0F;
+constexpr float kExtraWindowHeight = 518.0F;
+constexpr SDL_FRect kUpdatesToggle{24.0F, 396.0F, 288.0F, 22.0F};
+constexpr SDL_FRect kAfterburnerToggle{24.0F, 442.0F, 288.0F, 22.0F};
 constexpr SDL_FRect kRemasteredToggle{24.0F, 140.0F, 288.0F, 22.0F};
 constexpr SDL_FRect kArpiaToggle{24.0F, 342.0F, 288.0F, 22.0F};
 constexpr float kExtraButtonWidth = 70.0F;
@@ -203,6 +205,12 @@ void NovaExtraPrefs_Parse(std::istream &in,
     } else if (key == "remastered_graphics") {
       ParseBoolOrDefault(
           value, key, source, line_number, prefs.remastered_graphics);
+    } else if (key == "automatic_updates") {
+      ParseBoolOrDefault(
+          value, key, source, line_number, prefs.automatic_updates);
+    } else if (key == "automatic_afterburner") {
+      ParseBoolOrDefault(
+          value, key, source, line_number, prefs.automatic_afterburner);
     } else if (key == kRunInWindowKey) {
       ParseBoolOrDefault(value, key, source, line_number, prefs.run_in_window);
     } else if (key == kSafeBugFixesKey) {
@@ -233,16 +241,21 @@ void NovaExtraPrefs_Parse(std::istream &in,
 
 bool NovaExtraPrefs_LoadFromSystemStore(NovaExtraPrefs &prefs) {
   prefs = {};
-  const auto path = NovaExtraPrefs_SystemPath();
-  if (!path) {
-    return false;
+  bool loaded = false;
+  if (const auto path = NovaExtraPrefs_SystemPath()) {
+    std::ifstream in(*path);
+    if (in) {
+      NovaExtraPrefs_Parse(in, prefs, path->string());
+      loaded = true;
+    }
   }
-  std::ifstream in(*path);
-  if (!in) {
-    return false; // Missing on first run; the caller treats this as "no file".
+  // Updates apply to the shared engine, so this setting is common to campaigns.
+  if (const auto shared = NovaPaths::SharedSupportDirectory()) {
+    int enabled = 1;
+    if (std::ifstream(*shared / "Automatic updates.txt") >> enabled)
+      prefs.automatic_updates = enabled != 0;
   }
-  NovaExtraPrefs_Parse(in, prefs, path->string());
-  return true;
+  return loaded;
 }
 
 void NovaExtraPrefs_Write(std::ostream &out, const NovaExtraPrefs &prefs) {
@@ -256,6 +269,9 @@ void NovaExtraPrefs_Write(std::ostream &out, const NovaExtraPrefs &prefs) {
     out << kInstallRootKey << '=' << prefs.install_root->string() << '\n';
   }
   out << "\n[display]\n"
+      << "automatic_updates=" << BoolFlag(prefs.automatic_updates) << '\n'
+      << "automatic_afterburner=" << BoolFlag(prefs.automatic_afterburner)
+      << '\n'
       << "remastered_graphics=" << BoolFlag(prefs.remastered_graphics) << '\n'
       << kUiScaleKey << '=' << FormatScale(prefs.scale.ui) << '\n'
       << kFlightSceneScaleKey << '=' << FormatScale(prefs.scale.flight_scene)
@@ -299,6 +315,11 @@ bool NovaExtraPrefs_SaveToSystemStore(const NovaExtraPrefs &prefs) {
   if (!out) {
     NovaLog::Error("extra prefs: failed while writing '{}'", path->string());
     return false;
+  }
+  if (const auto shared = NovaPaths::SharedSupportDirectory()) {
+    std::ofstream update_setting(*shared / "Automatic updates.txt");
+    if (!(update_setting << (prefs.automatic_updates ? 1 : 0)))
+      NovaLog::Warn("could not save the shared automatic-update preference");
   }
   NovaLog::Info("extra prefs: saved '{}'", path->string());
   return true;
@@ -348,6 +369,8 @@ struct ExtraPrefsLayout {
 }
 
 enum class ExtraPrefsControl {
+  updates,
+  afterburner,
   remastered,
   arpia,
   none,
@@ -511,6 +534,10 @@ HitTestExtraPrefs(const ExtraPrefsLayout &layout, float x, float y) {
     return ExtraPrefsControl::remastered;
   if (hit(kArpiaToggle))
     return ExtraPrefsControl::arpia;
+  if (hit(kUpdatesToggle))
+    return ExtraPrefsControl::updates;
+  if (hit(kAfterburnerToggle))
+    return ExtraPrefsControl::afterburner;
   constexpr std::array<ExtraPrefsControl, 3> kUpControl{
       ExtraPrefsControl::ui_up,
       ExtraPrefsControl::mission_up,
@@ -654,6 +681,8 @@ void DrawExtraPrefsDialog(SdlPlatform &platform,
                           const ExtraPrefsLayout &layout,
                           const PresentationScale &scale,
                           const BugFixPolicy &bugfixes,
+                          bool automatic_updates,
+                          bool automatic_afterburner,
                           const SettingsArtwork &artwork,
                           ExtraPrefsControl hover,
                           const SDL_FPoint &mouse,
@@ -811,6 +840,27 @@ void DrawExtraPrefsDialog(SdlPlatform &platform,
                 NovaPaths::ArpiaCampaignInstalled()
                     ? "Restart to switch. Separate campaign pilots."
                     : "Install the ARPIA2 pack to enable.");
+  DrawCheckBox(platform,
+               font_cache,
+               OffsetRect({24.0F, 398.0F, 12.0F, 12.0F}, win),
+               "Automatic updates (Windows)",
+               automatic_updates,
+               false);
+  NovaText_Draw(platform,
+                font_cache,
+                NovaFontFamily::kGeneva,
+                10.0F,
+                kNovaFontStyleRegular,
+                kControlDisabledText,
+                win.x + 24.0F,
+                win.y + 431.0F,
+                "Downloads quietly; installs on next launch.");
+  DrawCheckBox(platform,
+               font_cache,
+               OffsetRect({24.0F, 444.0F, 12.0F, 12.0F}, win),
+               "Auto-flight uses afterburner",
+               automatic_afterburner,
+               false);
   DrawButton(platform,
              font_cache,
              OffsetRect(layout.ok_button, win),
@@ -889,6 +939,8 @@ bool NovaMenu_RunExtraPrefsDialog(
                          layout,
                          working.scale,
                          working.bugfixes,
+                         working.automatic_updates,
+                         working.automatic_afterburner,
                          artwork,
                          hover,
                          mouse,
@@ -901,6 +953,12 @@ bool NovaMenu_RunExtraPrefsDialog(
          {"arpia2",
           platform.current_placement().ToWindowRect(
               OffsetRect(kArpiaToggle, layout.window))},
+         {"automatic_updates",
+          platform.current_placement().ToWindowRect(
+              OffsetRect(kUpdatesToggle, layout.window))},
+         {"automatic_afterburner",
+          platform.current_placement().ToWindowRect(
+              OffsetRect(kAfterburnerToggle, layout.window))},
          {"ok",
           platform.current_placement().ToWindowRect(
               OffsetRect(layout.ok_button, layout.window))}});
@@ -929,6 +987,14 @@ bool NovaMenu_RunExtraPrefsDialog(
       if (hit == ExtraPrefsControl::arpia) {
         (void)NovaPaths::SelectArpiaCampaign(
             !NovaPaths::ArpiaCampaignSelected());
+        continue;
+      }
+      if (hit == ExtraPrefsControl::updates) {
+        working.automatic_updates = !working.automatic_updates;
+        continue;
+      }
+      if (hit == ExtraPrefsControl::afterburner) {
+        working.automatic_afterburner = !working.automatic_afterburner;
         continue;
       }
       if (hit == ExtraPrefsControl::ok) {

@@ -1434,6 +1434,7 @@ struct GameState {
   struct {
     bool visible = false;
     float x = 24, y = 80;
+    float width = 348, height = 278;
     float zoom = .75F, pan_x = 0, pan_y = 0;
     std::int16_t selected = -1, centered_system = -1;
   } navigation_panel;
@@ -1459,6 +1460,7 @@ struct GameState {
   // default true, preserving the port's corrected behavior; the port-only
   // Extra Prefs dialog edits the copy in NovaExtraPrefs and seeds it here.
   BugFixPolicy bugfixes;
+  bool automatic_afterburner = true;
   IntroCinematicData intro_cinematic;
   // The transient HUD overlay message (see HudOverlayState). Kept on GameState
   // per AGENTS.md (no hidden globals) and rendered by the HudRenderer.

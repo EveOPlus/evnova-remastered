@@ -1912,8 +1912,7 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
     const auto navigation_input =
         navigation_panel.Update(platform, state, frame_input);
     if (navigation_input.changed_route) {
-      automation.Cancel();
-      manual_jump_assist = false;
+      automation.NavigationChanged(state, host_now_ms);
       jump_key.CancelPending();
     }
     if (std::isfinite(frame_input.scene_zoom_delta) &&
@@ -2479,6 +2478,8 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
         const bool clear_secondary =
             input.clear_secondary &&
             !state.command_latches.clear_secondary_was_held;
+        if (input.prepare_mining_bank >= 0)
+          NovaWeapon_PrepareMiningAnimation(state, input.prepare_mining_bank);
         NovaWeapon_TickPlayerWeaponCommands(
             state,
             {.fire_primary_held = input.fire,

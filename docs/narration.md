@@ -24,16 +24,24 @@ returns to it on closing. The toolbar reserves space below the dialog:
 
 ## Installation
 
-Run `tools/setup-narration.ps1` with Python 3.11 or later. It installs
-`piper-tts==1.8.0` into `.cache/narrator` and downloads the
-`en_US-lessac-medium`, `en_US-ryan-medium`, `en_GB-alba-medium` and
-`en_GB-alan-medium` voices and their model cards to `.cache/narrator-voices`.
-Speech runs locally after this setup; no service account or API key is used.
+Open **Set Prefs > Narration > Install voices**. The game installs the speech
+runtime and all four voices in the background, displays progress, and refreshes
+the voice list when ready. Choose a voice and press **Preview**. The button
+becomes **Repair voices** once they are installed. If a download fails, retry
+from the same button. Closing settings does not cancel the installer.
 
-The executable searches its parent directories for this workspace's helper,
-Python environment, and voice models. The package in `dist/EV Nova Remastered` uses
-that installation. Copying just the package to another computer does not include
-the narration runtime. Install the workspace and run the setup there too.
+No separately installed Python is needed. The helper downloads a pinned,
+checksum-verified Python runtime and installs `piper-tts==1.8.0`, then fetches
+Lessac, Ryan, Alba and Alan with their model cards. It loads each model before
+reporting success. Speech runs locally afterward, with no account or API key.
+
+Runtime files live in `%APPDATA%/Ambrosia Software/EV Nova/NarrationRuntime`,
+shared by the base game and ARPIA2 and by installed copies on this computer.
+Game updates preserve that folder. The previous workspace `.cache` layout is
+still supported as a fallback. `tools/setup-narration.ps1` provides the same
+installer outside the game; `-Destination` selects an isolated test folder.
+`setup-status.txt` and `install-log.txt` inside the runtime folder record progress
+and detailed errors. The download is approximately 320 MB.
 
 Piper is a separate GPL-3.0 speech engine; see
 [Piper](https://github.com/OHF-Voice/piper1-gpl) and the downloaded voice's

@@ -13,6 +13,7 @@
 #include "hud_overlay.hpp"
 #include "hud_renderer.hpp"
 #include "mission.hpp"
+#include "mission_navigation.hpp"
 #include "nova_font.hpp"
 #include "outfit.hpp"
 #include "scenario_data.hpp"
@@ -1308,6 +1309,7 @@ RunStarmapSearchDialog(SdlPlatform &platform,
 // original raw-appends duplicates into its 32-slot global. Consumers
 // (0x004a8100 arrow draw, 0x004a3aa0 click gate) only test membership, so
 // output is identical.
+// Stellar selection is shared with MissionDestinationStellar for market badges.
 std::vector<std::int16_t> BuildMissionTargetSystems(const GameState &state) {
   std::vector<std::int16_t> out;
   const auto append_unique = [&out](std::int16_t system_id) {
@@ -1324,23 +1326,10 @@ std::vector<std::int16_t> BuildMissionTargetSystems(const GameState &state) {
     // MisnActive +0x00/+0x04 hold 0-based stellar indices (the original's
     // g_stellar_defs convention); ScenarioData::Stellar takes the 0x80-based
     // resource id.
-    std::int16_t target_system = -1;
-    if (mission.travel_stellar_id >= 0) {
-      const Stellar *travel = state.scenario.Stellar(
-          static_cast<std::int16_t>(mission.travel_stellar_id + 0x80));
-      if (travel != nullptr && travel->is_available && travel->system_id >= 0) {
-        target_system = travel->system_id;
-      }
-    }
-    if (mission.return_stellar_id >= 0 &&
-        mission.return_stellar_id != mission.travel_stellar_id &&
-        state.active_mission_runtime_flags[slot].travel_stellar_reached) {
-      const Stellar *ret = state.scenario.Stellar(
-          static_cast<std::int16_t>(mission.return_stellar_id + 0x80));
-      if (ret != nullptr && ret->is_available && ret->system_id >= 0) {
-        target_system = ret->system_id;
-      }
-    }
+    const auto destination = MissionDestinationStellar(
+        state, mission, state.active_mission_runtime_flags[slot]);
+    const auto *stellar = state.scenario.Stellar(destination);
+    const std::int16_t target_system = stellar ? stellar->system_id : -1;
     // Bible Flags 0x0002: "Don't show the red destination arrows on the map".
     if (target_system >= 0 && (mission.flags_primary & 0x0002U) == 0U) {
       append_unique(target_system);

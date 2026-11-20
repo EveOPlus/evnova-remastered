@@ -3,6 +3,7 @@ param(
     [string]$Configuration = 'release',
     [int]$Jobs = 8,
     [string]$DependencyDirectory,
+    [string]$Revision,
     [switch]$TestDriver
 )
 
@@ -37,7 +38,7 @@ try {
     $novaBuildName = if ($TestDriver) { "driver-$Configuration" } else { $Configuration }
     $novaBuildDirectory = Join-Path $novaRoot "build\$novaBuildName"
     $novaProbeOption = if ($TestDriver) { 'ON' } else { 'OFF' }
-    cmake --preset $Configuration -B $novaBuildDirectory -DVCPKG_TARGET_TRIPLET=x64-windows-static "-DEVNOVA_ENABLE_PROBE=$novaProbeOption" "-DVCPKG_INSTALLED_DIR=$novaDependencyPath"
+    cmake --preset $Configuration -B $novaBuildDirectory -DVCPKG_TARGET_TRIPLET=x64-windows-static "-DEVNOVA_ENABLE_PROBE=$novaProbeOption" "-DVCPKG_INSTALLED_DIR=$novaDependencyPath" "-DEVNOVA_BUILD_REVISION=$Revision"
     if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed.' }
     cmake --build $novaBuildDirectory --parallel $Jobs
     if ($LASTEXITCODE -ne 0) { throw 'The native build failed.' }

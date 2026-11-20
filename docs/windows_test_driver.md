@@ -96,10 +96,10 @@ are read-only and are not pilot-file data. Release on `radial.mine` to start
 the regular controller; its `mine` goal appears at `/probe/automation`.
 
 `pop_out` in the full map opens `navigation_panel`, which publishes
-`nav.title`, `nav.close`, `nav.chart` and `nav.system.<zero-based-id>`.
+`nav.title`, `nav.close`, `nav.resize`, `nav.chart` and `nav.system.<zero-based-id>`.
 `view.navigation_panel` and `navigation_zoom` expose session state. Drag the
 slim title bar to move the panel, drag blank chart space to pan, wheel to zoom,
-and Shift-click to route. The title-bar X or right-click closes the panel.
+and Shift-click to route. The title-bar X closes the panel.
 J makes one jump; double-J within 450 ms follows the route. Each J press must
 include a release; holding does not repeat.
 
@@ -109,3 +109,8 @@ controller for the selected column. `done` closes without starting a flight.
 Goods use `commodity.<index>`, `junk.<index>` or `mission.<cargo-type>`; their
 values report held quantities. Price cells use `market.<stellar-id>.<good-key>`.
 `goods_previous/next` and `markets_previous/next` paginate the two axes.
+
+The narration panel also publishes `voice.install`. `state narration` reports
+an `installed` boolean for each of the four displayed voices and `installing`.
+The install continues in the background when settings close. Use an isolated
+profile to test the installation without touching the player's runtime.

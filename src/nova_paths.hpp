@@ -61,6 +61,8 @@ ResolveUserSelectedInstallRoot(const std::filesystem::path &selected);
 // ~/Library/Application Support/Ambrosia Software/EV Nova/. The
 // directory is created on demand; nullopt when it cannot be resolved.
 [[nodiscard]] std::optional<std::filesystem::path> SupportDirectory();
+// Shared downloaded runtimes, independent of the selected campaign.
+[[nodiscard]] std::optional<std::filesystem::path> SharedSupportDirectory();
 
 // Installs a user-selected support folder, overriding SDL_GetPrefPath. Set by
 // tests so a save/load does not touch the developer's real per-user state;

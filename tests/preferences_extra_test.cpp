@@ -148,3 +148,17 @@ TEST_CASE("Remastered graphics defaults on for existing profiles and remembers "
   CHECK_FALSE(prefs.remastered_graphics);
   CHECK(prefs.scale.ui == 2.0F);
 }
+
+TEST_CASE("community automation preferences round trip and default on") {
+  NovaExtraPrefs prefs;
+  CHECK(prefs.automatic_updates);
+  CHECK(prefs.automatic_afterburner);
+  prefs.automatic_updates = false;
+  prefs.automatic_afterburner = false;
+  std::ostringstream saved;
+  game::NovaExtraPrefs_Write(saved, prefs);
+  std::istringstream reload(saved.str());
+  game::NovaExtraPrefs_Parse(reload, prefs, "round trip");
+  CHECK_FALSE(prefs.automatic_updates);
+  CHECK_FALSE(prefs.automatic_afterburner);
+}

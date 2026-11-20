@@ -56,6 +56,9 @@ public:
   bool AssistBlockedJump(const GameState &, std::uint64_t now_ms);
   bool FollowRoute(const GameState &, std::uint64_t now_ms);
   [[nodiscard]] bool FollowingRoute() const;
+  // Floating-map edits retarget active jump assistance without cancelling it.
+  // Docking, mining and idle controllers keep their current task.
+  void NavigationChanged(const GameState &, std::uint64_t now_ms);
   bool MineAsteroid(const GameState &, std::int16_t slot, std::uint64_t now_ms);
   [[nodiscard]] bool Mining() const;
   // High-level "destroy a ship" routine. `target` matches an active ship in

@@ -602,7 +602,7 @@ std::vector<MappedSystem> BuildMappedSystems(const GameState &state,
   return out;
 }
 
-// @port 0x004A8100 88% rendering,gameplay
+// @port 0x004A8100 88% rendering,gameplay,divergence
 // Ghidra 0x004a8100 NovaUi_DrawStarmapRoutesAndMarkers. The political overlay
 // and the nebula pass (both from 0x004a51f0) are drawn by draw_starmap before
 // this call, so this pass draws, in order: plotted-route chain (green),
@@ -804,15 +804,11 @@ void DrawGalaxy(SdlPlatform &platform,
              tint(StellarDisplayColor(state, m.zero_based_id)),
              static_cast<double>(view.zoom) < kZoomInLimit ? 2.0F : 1.0F);
 
-    // Mission-target arrow (CICN 0x3a98): a 16px box up-left of the marker
-    // (0x004a8e5c), pointing down-right at the node. The original suppresses
-    // it on the selected system (override cleared when the selected slot
-    // matches and the briefing latch DAT_007dc745 is clear, 0x004a8f0a).
-    // Selected arrow (CICN 0x3a99, DAT_007dc3b4): 16px box up-right of the
-    // marker (0x004a9040), drawn for ANY selected system — so selecting a
-    // mission target swaps the red arrow for the green one rather than
-    // dropping the marker entirely.
-    if (is_mission_target && !is_selected && icons.mission_target) {
+    // Community display divergence: retain the usual mission arrow (CICN
+    // 0x3a98) up-left even when selected or occupied. The original suppresses
+    // it for selection at 0x004a8f0a; the separate selected arrow (0x3a99)
+    // fits up-right, and the current-system dot stays in the center.
+    if (is_mission_target && icons.mission_target) {
       const SDL_FRect dst{m.sx - r - 16.0F, m.sy - r - 16.0F, 16.0F, 16.0F};
       SDL_SetTextureAlphaMod(icons.mission_target->get(),
                              static_cast<std::uint8_t>(255.0F * alpha));

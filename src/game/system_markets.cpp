@@ -1,8 +1,11 @@
 #include "system_markets.hpp"
 
 #include "hud_overlay.hpp"
+#include "mission.hpp"
+#include "mission_navigation.hpp"
 #include "nova_font.hpp"
 #include "preferences_ui.hpp"
+#include "starmap.hpp"
 #include "util/format.hpp"
 #include "util/geometry.hpp"
 
@@ -21,12 +24,33 @@ std::vector<SystemMarket> BuildSystemMarkets(const GameState &state) {
     return result;
   for (const auto id : system->nav_defs) {
     const auto *stellar = state.scenario.Stellar(id);
-    if (!stellar || (stellar->flags & 0x2U) == 0 ||
+    if (!stellar ||
         std::any_of(result.begin(), result.end(), [id](const auto &market) {
           return market.prices.stellar_id == id;
         }))
       continue;
-    result.push_back({stellar->name, NovaTradeCenter_OpenSession(state, id)});
+    SystemMarket market{stellar->name, NovaTradeCenter_OpenSession(state, id)};
+    market.has_market = (stellar->flags & 0x2U) != 0;
+    for (std::size_t slot = 0; slot < state.active_missions.size(); ++slot) {
+      const auto &mission = state.active_missions[slot];
+      const auto &flags = state.active_mission_runtime_flags[slot];
+      if (!flags.is_active || flags.is_failed || (mission.flags_primary & 2U))
+        continue;
+      const auto destination = MissionDestinationStellar(state, mission, flags);
+      if (destination >= 0x80 &&
+          NovaStellar_AreStellarsEquivalent(
+              state,
+              static_cast<std::int16_t>(destination - 0x80),
+              static_cast<std::int16_t>(id - 0x80)))
+        ++market.mission_count;
+    }
+    if (!market.has_market) {
+      if (market.mission_count == 0)
+        continue;
+      market.prices
+          .rows = {}; // A mission stop need not have a commodity exchange.
+    }
+    result.push_back(std::move(market));
   }
   return result;
 }
@@ -181,6 +205,7 @@ RunSystemMarkets(SdlPlatform &platform,
   const std::string title =
       "System Markets" + (system ? " - " + system->name : std::string{});
   NovaFontCache fonts;
+  const auto mission_icons = NovaStarmap_LoadMarkerIcons(platform);
   int market_page = 0;
   int goods_page = 0;
   int selected = 0;
@@ -285,7 +310,40 @@ RunSystemMarkets(SdlPlatform &platform,
       SDL_SetRenderDrawColor(
           renderer, active ? 82 : 40, active ? 27 : 43, active ? 32 : 48, 255);
       SDL_RenderFillRect(renderer, &box);
-      text(box.x + 10, 113, box.w - 20, market.name, 15, kControlText, active);
+      const bool mission_here = market.mission_count > 0;
+      const float name_inset = mission_here ? 32.0F : 10.0F;
+      text(box.x + name_inset,
+           mission_here ? 104.0F : 113.0F,
+           box.w - name_inset - 10,
+           market.name,
+           15,
+           kControlText,
+           active);
+      if (mission_here) {
+        const SDL_FRect badge{box.x + 8, box.y + 5, 18, 18};
+        if (mission_icons.mission_target)
+          SDL_RenderTexture(
+              renderer, mission_icons.mission_target->get(), nullptr, &badge);
+        else
+          text(badge.x + 4, badge.y + 16, 14, "!", 17, kWorstBuy, true);
+        text(box.x + 10,
+             122,
+             box.w - 20,
+             market.has_market ? (market.mission_count == 1
+                                      ? "Mission here"
+                                      : std::to_string(market.mission_count) +
+                                            " missions here")
+                               : "Mission / No market",
+             11,
+             kWorstBuy);
+        ProbeNamedRect mission_item{
+            "market." + std::to_string(market.prices.stellar_id) + ".mission",
+            placement.ToWindowRect(badge)};
+        mission_item.has_value = true;
+        mission_item.value = market.mission_count;
+        mission_item.label = "Mission destination";
+        controls.push_back(std::move(mission_item));
+      }
       ProbeNamedRect item{"market." + std::to_string(market.prices.stellar_id),
                           placement.ToWindowRect(box)};
       item.has_value = true;

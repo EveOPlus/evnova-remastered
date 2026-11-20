@@ -913,3 +913,174 @@ TEST_CASE("route autopilot can join its first jump already in progress",
   state.travel.destination_system_id = 0;
   CHECK_FALSE(pilot.FollowRoute(state, 3));
 }
+
+TEST_CASE("floating map edits retarget active travel without cancelling it") {
+  auto state = RouteState();
+  FlightAutomationController pilot;
+  SECTION("route follows the replacement plan") {
+    REQUIRE(pilot.FollowRoute(state, 0));
+    state.scenario.systems[0].links[1] = 0x82;
+    REQUIRE(PlotShortestStarmapRoute(state, 2));
+    pilot.NavigationChanged(state, 1);
+    REQUIRE(pilot.FollowingRoute());
+    state.player.pos_y = -1500;
+    FlightInput input;
+    pilot.Tick(state, 2, input);
+    CHECK(input.travel);
+    Arrive(state, 2);
+    input = {};
+    pilot.Tick(state, 3, input);
+    CHECK(pilot.status().phase == FlightAutomationPhase::kComplete);
+  }
+  SECTION("single jump retargets without enabling the whole route") {
+    REQUIRE(pilot.JumpTo(state, "Alpha Centauri", 0));
+    state.scenario.systems[0].links[1] = 0x82;
+    REQUIRE(PlotShortestStarmapRoute(state, 2));
+    pilot.NavigationChanged(state, 1);
+    CHECK(pilot.status().goal == FlightAutomationGoal::kJumpTo);
+    state.player.pos_y = -1500;
+    FlightInput input;
+    pilot.Tick(state, 2, input);
+    CHECK(input.travel);
+    CHECK_FALSE(input.cycle_destination_next);
+    Arrive(state, 2);
+    pilot.Tick(state, 3, input);
+    CHECK(pilot.status().phase == FlightAutomationPhase::kComplete);
+  }
+  SECTION("docking keeps its port") {
+    REQUIRE(pilot.LandAt(state, "Earth", 0));
+    pilot.NavigationChanged(state, 1);
+    CHECK(pilot.status().goal == FlightAutomationGoal::kLandAt);
+    CHECK(pilot.status().target == "Earth");
+    CHECK(pilot.status().phase == FlightAutomationPhase::kSelect);
+  }
+  SECTION("mining keeps its asteroid") {
+    auto mining_state = MiningState();
+    REQUIRE(pilot.MineAsteroid(mining_state, 0, 0));
+    pilot.NavigationChanged(mining_state, 1);
+    CHECK(pilot.Mining());
+  }
+  SECTION("planning never starts an idle autopilot") {
+    pilot.NavigationChanged(state, 1);
+    CHECK(pilot.status().phase == FlightAutomationPhase::kIdle);
+  }
+}
+
+TEST_CASE("automatic afterburner preserves route fuel and obeys its setting") {
+  auto state = RouteState();
+  state.scenario.outfits.resize(1);
+  state.scenario.outfits[0].mod_type = 15;
+  state.scenario.outfits[0].mod_val = 30;
+  state.inventory.outfit_owned_count[0] = 1;
+  FlightAutomationController pilot;
+  REQUIRE(pilot.FollowRoute(state, 0));
+  FlightInput input;
+  pilot.Tick(state, 1, input);
+  CHECK(input.afterburner);
+  state.player.fuel_points = 202;
+  input = {};
+  pilot.Tick(state, 2, input);
+  CHECK_FALSE(input.afterburner);
+  state.player.fuel_points = 300;
+  state.automatic_afterburner = false;
+  input = {};
+  pilot.Tick(state, 3, input);
+  CHECK_FALSE(input.afterburner);
+  state.automatic_afterburner = true;
+  state.player.pos_y = -1500;
+  input = {};
+  pilot.Tick(state, 4, input);
+  CHECK_FALSE(input.afterburner);
+}
+
+TEST_CASE(
+    "auto mining boosts a distant approach then prepares and fires safely") {
+  auto state = MiningState();
+  state.scenario.outfits.resize(2);
+  state.scenario.outfits[1].mod_type = 15;
+  state.scenario.outfits[1].mod_val = 30;
+  state.inventory.outfit_owned_count[1] = 1;
+  state.player.fuel_points = 1000;
+  auto &rock = state.asteroid_pool[0];
+  rock.target_pos_y = -1600;
+  rock.target_vel_x = .5F;
+  FlightAutomationController controller;
+  REQUIRE(controller.MineAsteroid(state, 0, 0));
+  bool boosted = false, fired = false;
+  for (int tick = 0; tick < 1600; ++tick) {
+    FlightInput input;
+    controller.Tick(state, static_cast<std::uint64_t>(tick * 33), input);
+    CHECK(input.prepare_mining_bank == 0);
+    if (input.afterburner) {
+      boosted = true;
+      CHECK_FALSE(input.fire_secondary);
+      CHECK(std::hypot(rock.target_pos_x - state.player.pos_x,
+                       rock.target_pos_y - state.player.pos_y) > 200);
+      state.player.fuel_points -= 1;
+    }
+    if (input.fire_secondary) {
+      fired = true;
+      CHECK_FALSE(input.afterburner);
+      CHECK(std::hypot(state.player.vel_x - rock.target_vel_x,
+                       state.player.vel_y - rock.target_vel_y) <= .3F);
+      break;
+    }
+    PlayerMovementOptions opts;
+    opts.afterburner = input.afterburner;
+    opts.afterburner_push_frame_scaled = true;
+    (void)NovaPlayer_IntegrateMovement(
+        state.player, input, state.scenario.ships[0], 1.0F, opts);
+    rock.target_pos_x += rock.target_vel_x;
+  }
+  CHECK(boosted);
+  CHECK(fired);
+  CHECK(state.player.fuel_points >= 100);
+}
+
+TEST_CASE("automatic docking boosts far away and lands without overshooting") {
+  auto state = AutomationState();
+  state.scenario.ships.resize(1);
+  auto &cls = state.scenario.ships[0];
+  cls.accel = 500;
+  cls.speed = 400;
+  cls.turn_rate = 40;
+  cls.base_armor = 100;
+  state.player.ship_class_id = 0;
+  state.player.armor_points = 100;
+  state.player.fuel_points = 1000;
+  state.scenario.outfits.resize(1);
+  state.scenario.outfits[0].mod_type = 15;
+  state.scenario.outfits[0].mod_val = 30;
+  state.inventory.outfit_owned_count[0] = 1;
+  const auto id = FlightAutomationController::ResolveStellar(state, "Earth");
+  REQUIRE(id);
+  const auto *port = state.scenario.Stellar(*id);
+  REQUIRE(port);
+  state.player.pos_x = port->pos_x;
+  state.player.pos_y = port->pos_y + 2000;
+  state.travel.selected_stellar_id = *id;
+  state.travel.engage_timer = 1000;
+  FlightAutomationController controller;
+  REQUIRE(controller.LandAt(state, "Earth", 0));
+  bool boosted = false, docked = false;
+  for (int tick = 0; tick < 2000; ++tick) {
+    FlightInput input;
+    controller.Tick(state, static_cast<std::uint64_t>(tick * 33), input);
+    boosted = boosted || input.afterburner;
+    if (input.land) {
+      CHECK_FALSE(input.afterburner);
+      CHECK(std::hypot(state.player.vel_x, state.player.vel_y) < .8F);
+      docked = true;
+      break;
+    }
+    PlayerMovementOptions opts;
+    opts.afterburner = input.afterburner;
+    opts.afterburner_push_frame_scaled = true;
+    if (input.afterburner)
+      state.player.fuel_points -= 1;
+    (void)NovaPlayer_IntegrateMovement(state.player, input, cls, 1, opts);
+  }
+  CHECK(boosted);
+  CHECK(docked);
+  CHECK(state.player.fuel_points >= 100);
+}

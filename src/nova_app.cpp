@@ -1,6 +1,7 @@
 #include "nova_app.hpp"
 
 #include "brgr_archive.hpp"
+#include "build_version.hpp"
 #include "game/about_dialog.hpp"
 #include "game/command_input.hpp"
 #include "game/hud_overlay.hpp"
@@ -1302,6 +1303,8 @@ void NovaGameSession_Run(NovaRuntime &runtime) {
   // GameState owns the live copy the gameplay paths read; NovaExtraPrefs owns
   // the persisted copy the Extra Prefs dialog edits.
   runtime.game.bugfixes = runtime.extra_prefs.bugfixes;
+  runtime.game.automatic_afterburner =
+      runtime.extra_prefs.automatic_afterburner;
   // Ghidra 0x00416100 loads the scenario tables before
   // PilotData_AutoresumeLastPilot. Without that ordering a restored class id
   // has no definition, so the effective-stat pass gives it zero armor and the
@@ -1844,6 +1847,17 @@ void NovaRender_RedrawAndPresentFrame(NovaRuntime &runtime, short mode) {
     }
   }
 
+  // Community build identity; separate from the original menu artwork.
+  game::NovaText_DrawCentered(runtime.platform,
+                              runtime.font_cache,
+                              game::NovaFontFamily::kGeneva,
+                              13,
+                              game::kNovaFontStyleRegular,
+                              {170, 183, 200, 255},
+                              16,
+                              1008,
+                              752,
+                              evnova::BuildLabel());
   if (mode == 1) {
     runtime.platform.Present();
   }
@@ -2111,6 +2125,8 @@ void NovaGameMode_DispatchAction(NovaRuntime &runtime, GameModeAction action) {
     // The Extra Prefs dialog may have edited the bug-fix policy; keep the
     // live GameState copy in sync with the persisted NovaExtraPrefs copy.
     runtime.game.bugfixes = runtime.extra_prefs.bugfixes;
+    runtime.game.automatic_afterburner =
+        runtime.extra_prefs.automatic_afterburner;
     runtime.platform.SetMoviesEnabled(!runtime.prefs.quicktime_movies);
     // Force a redraw so the menu backdrop (and any brightness change) is seen.
     NovaRender_RedrawAndPresentFrame(runtime, 1);

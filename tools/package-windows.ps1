@@ -58,7 +58,7 @@ Get-ChildItem -LiteralPath $novaShare -Directory | ForEach-Object {
 Copy-Item -LiteralPath (Join-Path $novaRoot 'src\third_party\README.md') -Destination (Join-Path $novaLicenses 'vendored-audio.txt') -Force
 Copy-Item -LiteralPath (Join-Path $novaRoot 'src\third_party\pl_mpeg.h') -Destination (Join-Path $novaLicenses 'pl_mpeg-MIT.h') -Force
 @'
-EV NOVA REMASTERED
+EV NOVA COMMUNITY REMASTER
 
 Open evnova.exe to play. Choose New Pilot to create your pilot.
 
@@ -70,7 +70,7 @@ Mouse wheel: zoom the world without shrinking the HUD
 Wheel over minimap: zoom radar; wheel in galaxy map: zoom the chart
 System Markets in the radial menu: compare prices; select a port > Auto Dock
 Galaxy map > Pop out: drag its slim title bar to move, wheel to zoom
-Drag blank chart space to pan; title-bar X or right-click closes the panel
+Drag blank chart space to pan; drag edges to resize; X closes the panel
 Shift-click a destination in either map to route; double-press J follows it
 Asteroid radial > Auto-mine: approach, fire mining lasers, scoop the yield
 W: select secondary weapon; hold Left Ctrl: fire selected secondary
@@ -87,8 +87,8 @@ F6 / Read again: replay the current text
 F8 / Stop: stop the current reading
 F7 / Voice: toggle narration (saved for the next session)
 Closing a dialog stops its narration.
-The local voice uses this workspace's tools and .cache folders. Keep this
-package in dist, or follow docs/narration.md to set it up elsewhere.
+Use Install voices in that panel to download all four voices and their runtime.
+Voices are shared between campaigns and kept when the game updates.
 
 Arrow keys: fly and turn
 Space: primary weapons
@@ -132,11 +132,28 @@ evnova.exe. The old executable there is used as a resource source.
 Engine and dependency notices are included with this package.
 '@ | Set-Content -LiteralPath (Join-Path $novaPackage 'READ ME.txt') -Encoding utf8
 
+# Include the same updater, manifest and helpers as the public engine package.
+python (Join-Path $novaRoot 'tools/package_release.py')
+if ($LASTEXITCODE -ne 0) { throw 'Could not prepare versioned engine metadata.' }
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$novaPublicZip = [IO.Compression.ZipFile]::OpenRead((Join-Path $novaRoot 'dist/evnova-windows-x64.zip'))
+try {
+    $novaPackageRoot = [IO.Path]::GetFullPath($novaPackage).TrimEnd('\') + '\'
+    foreach ($novaEntry in $novaPublicZip.Entries) {
+        $novaRelative = $novaEntry.FullName.Substring('EV Nova Remastered/'.Length)
+        if ($novaRelative -eq 'evnova.exe') { continue }
+        $novaDestination = [IO.Path]::GetFullPath((Join-Path $novaPackageRoot $novaRelative))
+        if (-not $novaDestination.StartsWith($novaPackageRoot,[StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe package path' }
+        New-Item -ItemType Directory -Path (Split-Path -Parent $novaDestination) -Force | Out-Null
+        [IO.Compression.ZipFileExtensions]::ExtractToFile($novaEntry,$novaDestination,$true)
+    }
+} finally { $novaPublicZip.Dispose() }
+
 $novaShell = New-Object -ComObject WScript.Shell
 $novaShortcut = $novaShell.CreateShortcut((Join-Path $novaRoot 'Play EV Nova Remake.lnk'))
 $novaShortcut.TargetPath = $novaInstalledExe
 $novaShortcut.WorkingDirectory = $novaPackage
 $novaShortcut.IconLocation = (Join-Path $novaPackageData 'EV Nova.exe') + ',0'
-$novaShortcut.Description = 'Play EV Nova Remastered'
+$novaShortcut.Description = 'Play EV Nova Community Remaster'
 $novaShortcut.Save()
 Write-Output $novaPackage

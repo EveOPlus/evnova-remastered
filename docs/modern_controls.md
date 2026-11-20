@@ -60,8 +60,8 @@ Automatic jump departure uses the normal proximity, fuel, ship condition, and
 route checks. J closes the small route overlay and automatic destination
 selection leaves it closed. It flies out of the system's no-jump area and issues the normal
 jump command. The player jump transition and its sound/fades run at twice
-the original rate; ordinary flight and combat speed are unchanged. Manual steering, changing destination, or opening the galaxy
-map cancels the assist. A missing destination or insufficient fuel still uses
+the original rate; ordinary flight and combat speed are unchanged. Manual steering or opening the full galaxy
+map cancels the assist; floating-map edits retarget it. A missing destination or insufficient fuel still uses
 the game's usual denial.
 
 Save Pilot appears once a living pilot is loaded. Escape from flight returns
@@ -131,7 +131,13 @@ Prices come
 from the same Trade Center snapshot used when docking, including reputation,
 domination, active disasters and junk availability conditions. Select a market
 and click Auto Dock to close the comparison, fly there and land through the
-normal docking controller. Steering cancels the approach. Browsing or Done
+normal docking controller. Steering cancels the approach. A red mission arrow beside a market's name and
+**Mission here** label mark its current mission destination; multiple jobs
+show a count. The badge follows the outbound/return leg, excludes failed
+missions and respects hidden-destination flags. Selecting it still uses the
+same market heading and Auto Dock action. A local mission stop without a
+commodity exchange also appears, labelled **Mission / No market**, so Auto Dock
+can take you there. Browsing or Done
 does not change cargo, credits or destination. Ten goods and four markets fit
 per page. Wheel/Previous/Next scroll the goods; Previous ports/Next ports show
 additional markets. Price extremes always compare all markets, including
@@ -143,8 +149,18 @@ route planner. A slim title bar moves the panel and has a close button.
 Drag empty chart space to pan, and use the wheel to
 zoom. Click a neighboring system or Shift-click a destination to plot the
 shortest known route. J jumps once; double-J follows the route. The panel stays open and recenters
-after each jump. Right-click the panel to close it. Panel gestures do not start
-mouse steering or change world/radar zoom.
+after each jump. Only the X closes it; right-click leaves it open. Panel gestures do not start
+mouse steering or change world/radar zoom. Drag the panel's edges or bottom-right
+grip to resize it without changing the chart zoom.
+Map clicks, panning, resizing and closing the panel leave autopilots running.
+A new destination retargets active jump assistance; a new route retargets
+auto-route. Selecting the current system or current next hop preserves the
+route. Mining and docking keep their own target while the map is used.
+
+**Extra Prefs > Auto-flight uses afterburner** enables automatic boosting for
+mining approaches, jump departures, Auto Dock and Nearest Port. It needs an
+installed afterburner and preserves enough fuel for the planned route (or one
+jump). The ship releases boost in time to brake for docking or mining.
 
 Auto-mine requires a forward-firing mining weapon, an asteroid scoop and free
 cargo space. It uses normal movement, weapon selection, shooting and collision

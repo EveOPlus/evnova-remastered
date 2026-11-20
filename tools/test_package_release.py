@@ -1,4 +1,5 @@
 import tempfile
+import json
 import unittest
 from pathlib import Path
 import zipfile
@@ -10,6 +11,8 @@ class PackageTests(unittest.TestCase):
     def test_only_listed_files_and_current_notices_are_packaged(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            (root / "VERSION").write_text("0.1.0-preview.2")
+            build = dict(version="0.1.0-preview.2", probe="OFF", revision="fixture")
             for name in (*DOCUMENTS, "licenses/README.md", "licenses/sdl3.txt",
                          "EV Nova/Nova.rez", "Pilots/private.plt", ".env", "game.exe"):
                 path = root / name
@@ -21,17 +24,20 @@ class PackageTests(unittest.TestCase):
                 notice.parent.mkdir(parents=True)
                 notice.write_text("actual dependency notice")
             output = root / "public.zip"
-            make_package(root, root / "game.exe", share, output)
+            make_package(root, root / "game.exe", share, output, build)
             with zipfile.ZipFile(output) as archive:
                 names = archive.namelist()
                 self.assertIn("EV Nova Remastered/tools/setup-game-data.ps1", names)
                 self.assertEqual(archive.read("EV Nova Remastered/licenses/sdl3.txt"),
                                  b"actual dependency notice")
                 self.assertFalse(any(n.endswith((".rez", ".plt", ".env")) for n in names))
+                manifest = json.loads(archive.read("EV Nova Remastered/release.json"))
+                self.assertEqual(manifest["version"], build["version"])
+                self.assertEqual(len(manifest["files"]), len(names) - 1)
             (share / "sdl3/copyright").unlink()
             original = output.read_bytes()
             with self.assertRaises(ValueError):
-                make_package(root, root / "game.exe", share, output)
+                make_package(root, root / "game.exe", share, output, build)
             self.assertEqual(output.read_bytes(), original)
 
 

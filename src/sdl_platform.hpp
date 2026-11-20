@@ -83,6 +83,8 @@ struct FlightInput {
   bool reverse = false;
   // Held afterburner command, binding slot 0x18 (default DIK 0x2c = Z).
   bool afterburner = false;
+  // Community auto-mining can deploy the equipment without firing a shot.
+  std::int16_t prepare_mining_bank = -1;
   // Primary fire: space (hold to keep firing all primary banks). Mirrors the
   // original's primary-fire command (binding slot 2, default DIK 0x39 =
   // space) read through NovaInput_IsCommandActiveWithGameplayGuards.

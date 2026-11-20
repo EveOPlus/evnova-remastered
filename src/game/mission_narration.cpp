@@ -18,14 +18,39 @@ bool KnownVoice(std::string_view id) {
                      [id](const auto &voice) { return voice.id == id; });
 }
 
-std::filesystem::path VoiceRoot() {
+std::filesystem::path VoicePython(const std::filesystem::path &root) {
+  const auto portable = root / ".cache/narrator/python.exe";
+  return std::filesystem::exists(portable)
+             ? portable
+             : root / ".cache/narrator/Scripts/python.exe";
+}
+
+std::filesystem::path VoiceInstallRoot() {
+  const auto support = NovaPaths::SharedSupportDirectory();
+  return support ? *support / "NarrationRuntime" : std::filesystem::path{};
+}
+
+std::filesystem::path VoiceRoot(std::string_view id) {
+  std::vector<std::filesystem::path> roots;
+  if (const auto shared = VoiceInstallRoot(); !shared.empty())
+    roots.push_back(shared);
   auto root = std::filesystem::path{SDL_GetBasePath()};
+#if EVNOVA_ENABLE_PROBE
+  // Reproduce a downloaded package without inheriting the developer's voices.
+  if (SDL_getenv("EVN_PROBE") && SDL_getenv("EVN_PROBE_FRESH_VOICES"))
+    root.clear();
+#endif
   for (int depth = 0; depth < 6 && !root.empty();
-       ++depth, root = root.parent_path()) {
-    if (std::filesystem::exists(root / ".cache/narrator/Scripts/python.exe") &&
-        std::filesystem::exists(root / "tools/nova_narrator.py")) {
-      return root;
-    }
+       ++depth, root = root.parent_path())
+    roots.push_back(root);
+  for (const auto &candidate : roots) {
+    if (std::filesystem::exists(VoicePython(candidate)) &&
+        std::filesystem::exists(candidate / "tools/nova_narrator.py") &&
+        std::filesystem::exists(candidate / ".cache/narrator-voices" /
+                                (std::string(id) + ".onnx")) &&
+        std::filesystem::exists(candidate / ".cache/narrator-voices" /
+                                (std::string(id) + ".onnx.json")))
+      return candidate;
   }
   return {};
 }
@@ -64,12 +89,7 @@ bool MissionNarrator::VoiceAvailable(std::string_view id) const {
   if (!KnownVoice(id)) {
     return false;
   }
-  const auto root = VoiceRoot();
-  return !root.empty() &&
-         std::filesystem::exists(root / ".cache/narrator-voices" /
-                                 (std::string(id) + ".onnx")) &&
-         std::filesystem::exists(root / ".cache/narrator-voices" /
-                                 (std::string(id) + ".onnx.json"));
+  return !VoiceRoot(id).empty();
 }
 
 bool MissionNarrator::SelectVoice(std::string_view id) {
@@ -116,20 +136,82 @@ MissionNarrator::~MissionNarrator() {
   }
 }
 
+bool MissionNarrator::InstallVoices() {
+#ifdef _WIN32
+  if (installer_)
+    return false;
+  const auto destination = VoiceInstallRoot();
+  if (destination.empty())
+    return false;
+  auto root = std::filesystem::path{SDL_GetBasePath()};
+  for (int depth = 0; depth < 6 && !root.empty();
+       ++depth, root = root.parent_path()) {
+    const auto script = root / "tools/setup-narration.ps1";
+    if (!std::filesystem::is_regular_file(script))
+      continue;
+    std::error_code error;
+    std::filesystem::create_directories(destination, error);
+    if (error)
+      break;
+    Stop();
+    const auto script_arg = script.string();
+    const auto destination_arg = destination.string();
+    const char *args[] = {"powershell.exe",
+                          "-NoProfile",
+                          "-NonInteractive",
+                          "-WindowStyle",
+                          "Hidden",
+                          "-ExecutionPolicy",
+                          "Bypass",
+                          "-File",
+                          script_arg.c_str(),
+                          "-Destination",
+                          destination_arg.c_str(),
+                          nullptr};
+    install_status_ = "Preparing voice installation...";
+    std::ofstream(destination / "setup-status.txt") << install_status_;
+    const auto properties = SDL_CreateProperties();
+    SDL_SetPointerProperty(
+        properties, SDL_PROP_PROCESS_CREATE_ARGS_POINTER, args);
+    SDL_SetBooleanProperty(
+        properties, SDL_PROP_PROCESS_CREATE_BACKGROUND_BOOLEAN, true);
+    installer_.reset(SDL_CreateProcessWithProperties(properties));
+    SDL_DestroyProperties(properties);
+    if (installer_)
+      return true;
+    NovaLog::Warn("voice installer could not start: {}", SDL_GetError());
+    break;
+  }
+#endif
+  install_status_ = "Could not start. Keep the tools folder beside the game.";
+  return false;
+}
+
+void MissionNarrator::PollInstallation() {
+  const auto root = VoiceInstallRoot();
+  if (!root.empty()) {
+    std::ifstream status(root / "setup-status.txt");
+    std::string line;
+    if (std::getline(status, line) && !line.empty())
+      install_status_ = std::move(line);
+  }
+  if (installer_ && SDL_WaitProcess(installer_.get(), false, nullptr))
+    installer_.reset();
+}
+
 bool MissionNarrator::StartWorker() {
   if (process_)
     return true;
   if (state_.empty())
     return false;
-  auto root = std::filesystem::path{SDL_GetBasePath()};
-  for (int depth = 0; depth < 6 && !root.empty();
-       ++depth, root = root.parent_path()) {
-    const auto python = root / ".cache/narrator/Scripts/python.exe";
+  const auto root = VoiceRoot(voice_);
+  if (!root.empty()) {
+    const auto python = VoicePython(root);
     const auto script = root / "tools/nova_narrator.py";
     const auto model = root / ".cache/narrator-voices" / (voice_ + ".onnx");
     if (!std::filesystem::exists(python) || !std::filesystem::exists(script) ||
         !std::filesystem::exists(model))
-      continue;
+      return false;
     const auto python_arg = python.string(), script_arg = script.string();
     const auto model_arg = model.string(), state_arg = state_.string();
     const bool silent =
@@ -289,10 +371,16 @@ std::string MissionNarrator::Snapshot() const {
   const std::string worker{std::istreambuf_iterator<char>(in),
                            std::istreambuf_iterator<char>()};
   return fmt::format(
-      "{{\"enabled\":{},\"active\":{},\"voice\":\"{}\",\"worker\":{}}}",
+      "{{\"enabled\":{},\"active\":{},\"voice\":\"{}\",\"installed\":[{},{},{},"
+      "{}],\"installing\":{},\"worker\":{}}}",
       enabled_,
       active(),
       voice_,
+      VoiceAvailable(kNarrationVoices[0].id),
+      VoiceAvailable(kNarrationVoices[1].id),
+      VoiceAvailable(kNarrationVoices[2].id),
+      VoiceAvailable(kNarrationVoices[3].id),
+      installing(),
       worker.empty() ? "null" : worker);
 }
 
@@ -306,16 +394,24 @@ void NovaNarration_RunVoiceSettings(
   SdlPlatform::ScopedPlacement placement_guard(platform,
                                                platform.current_placement());
   ProbeUiAutoClear probe_guard(platform);
-  constexpr SDL_FRect panel{0, 0, 480, 336};
-  constexpr std::array<SDL_FRect, 4> buttons{{{24, 282, 90, 30},
-                                              {122, 282, 70, 30},
-                                              {200, 282, 144, 30},
-                                              {352, 282, 104, 30}}};
+  constexpr SDL_FRect panel{0, 0, 480, 396};
+  constexpr SDL_FRect install_button{144, 296, 192, 30};
+  constexpr std::array<SDL_FRect, 4> buttons{{{24, 344, 90, 30},
+                                              {122, 344, 70, 30},
+                                              {200, 344, 144, 30},
+                                              {352, 344, 104, 30}}};
   std::array<bool, kNarrationVoices.size()> available{};
   for (std::size_t i = 0; i < available.size(); ++i) {
     available[i] = narrator.VoiceAvailable(kNarrationVoices[i].id);
   }
+  std::uint64_t next_poll = 0;
   while (!platform.quit_requested()) {
+    if (SDL_GetTicks() >= next_poll) {
+      narrator.PollInstallation();
+      for (std::size_t i = 0; i < available.size(); ++i)
+        available[i] = narrator.VoiceAvailable(kNarrationVoices[i].id);
+      next_poll = SDL_GetTicks() + 250;
+    }
     DrawOwningScreen(platform, render_background);
     platform.SetPlacement(PlaceContained({panel.w, panel.h},
                                          platform.logical_playfield_size(),
@@ -389,6 +485,33 @@ void NovaNarration_RunVoiceSettings(
       controls.emplace_back(
           names[i], platform.current_placement().ToWindowRect(buttons[i]));
     }
+    const bool all_installed = std::all_of(
+        available.begin(), available.end(), [](bool ready) { return ready; });
+    const std::string_view status =
+        narrator.install_status().empty()
+            ? (all_installed ? "All four voices are installed."
+                             : "Install four local voices (about 320 MB).")
+            : std::string_view{narrator.install_status()};
+    NovaText_DrawCentered(platform,
+                          fonts,
+                          NovaFontFamily::kGeneva,
+                          11,
+                          kNovaFontStyleRegular,
+                          kControlText,
+                          12,
+                          468,
+                          280,
+                          std::string{status.substr(0, 72)});
+    DrawButton(platform,
+               fonts,
+               install_button,
+               narrator.installing() ? "Installing..."
+               : all_installed       ? "Repair voices"
+                                     : "Install voices",
+               false);
+    controls.emplace_back(
+        "voice.install",
+        platform.current_placement().ToWindowRect(install_button));
     platform.PublishProbeUi("narration_settings", std::move(controls));
     platform.Present();
     for (auto input = platform.PollTextEvent(); input;
@@ -407,6 +530,9 @@ void NovaNarration_RunVoiceSettings(
           (void)narrator.SelectVoice(kNarrationVoices[i].id);
         }
       }
+      if (SDL_PointInRectFloat(&click, &install_button) &&
+          !narrator.installing())
+        (void)narrator.InstallVoices();
       if (SDL_PointInRectFloat(&click, &buttons[0]))
         narrator.PreviewVoice();
       if (SDL_PointInRectFloat(&click, &buttons[1]))

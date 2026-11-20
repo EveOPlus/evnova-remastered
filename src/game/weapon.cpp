@@ -187,6 +187,29 @@ std::int16_t NovaWeapon_GetWeaponFireIntervalTicks(const GameState &state,
   return static_cast<std::int16_t>(burst_count * w->burst_cycle_ticks);
 }
 
+void NovaWeapon_PrepareMiningAnimation(GameState &state, std::int16_t bank) {
+  if (bank < 0 || bank >= static_cast<std::int16_t>(kWeaponBankCount))
+    return;
+  const auto *weapon = WeaponAt(state, bank);
+  auto &player = state.player;
+  const auto *cls = state.scenario.Ship(
+      static_cast<std::int16_t>(player.ship_class_id + 0x80));
+  if (!weapon || !cls || (weapon->flags_secondary & 0x8000U) == 0 ||
+      player.weapon_banks[static_cast<std::size_t>(bank)].mounted <= 0 ||
+      NovaAiShip_IsDisabled(state, player) || state.travel.engaging ||
+      player.hyperspace_jump_timer != 0 ||
+      (NovaTargeting_ShipAtCloakVisibilityThreshold(player) &&
+       (weapon->flags_secondary & 0x4000U) == 0))
+    return;
+  // Reuse the preparation fields observed before the firing gate at 0x00455150.
+  // Keep the ordinary animation cadence; never call the projectile/ammo path.
+  if ((cls->sprite_behavior_flags & 0x0082U) == 0x0082U) {
+    player.last_weapon_fire_time_ms = state.tick_60hz;
+    if (player.waypoint_arrival_marker_b > 0)
+      player.waypoint_arrival_marker_a = -1;
+  }
+}
+
 // @port 0x00455150 88% gameplay,audio,bugfix
 // Ghidra 0x00455150 Weapon_FirePlayerWeaponBank. BUGFIX(original): under
 // BugFixPolicy::weapon_cadence a call fires every volley it owes

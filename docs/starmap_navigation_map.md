@@ -11,7 +11,7 @@ The map also offers **Pop out**, opening a non-modal in-game Navigation panel.
 It shares the map projection, discovery gates, marker assets and route planner.
 It displays the chart with a 20-pixel title bar: drag the title bar to move the
 panel, drag blank chart space to pan, wheel to zoom, and use the title-bar X
-or right-click to close. Shift-click
+to close; right-click leaves it open. Shift-click
 plots the shortest known route. J jumps once; double-J follows the route. The
 panel stays visible and recenters after each system arrival. Mouse gestures
 inside it are consumed before spaceflight steering and radar/world zoom.
@@ -514,3 +514,14 @@ While the mode is set, the map behaves like this:
   prompt is centred on `left + right/2`.
 - **Close.** Clear Route stays disabled (DAT_007dc744 is never set), and the
   close path skips `NovaUi_SyncTravelSelectionFromStarmapRoute`.
+
+The floating panel resizes from its edges or the bottom-right grip. The chart
+expands to show more space at the same zoom; its title bar and close button keep
+their normal size. Minimum size is 240 by 180 logical points, and dragging is
+clamped to the game window. Position and size persist for the current session.
+
+The community renderer keeps the original red mission arrow visible up-left
+of a system even when that system is selected or is the player's current
+location. The green selection arrow remains up-right and the cyan location
+dot stays in the center. This deliberately changes the original selection
+suppression rule in `0x004a8100`, for both the full and floating maps.

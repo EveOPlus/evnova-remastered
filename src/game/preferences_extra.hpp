@@ -36,6 +36,8 @@ struct NovaExtraPrefs {
   // written back when the Settings dialog commits.
   bool run_in_window = true;
   bool remastered_graphics = true;
+  bool automatic_updates = true;
+  bool automatic_afterburner = true;
 };
 
 // The INI path under the support folder, or nullopt if it cannot be resolved.

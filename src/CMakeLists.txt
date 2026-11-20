@@ -104,6 +104,7 @@ add_library(evnova_runtime
 )
 
 target_include_directories(evnova_runtime PUBLIC ${PROJECT_SOURCE_DIR}/src)
+target_include_directories(evnova_runtime PUBLIC ${PROJECT_BINARY_DIR}/generated)
 # Vendored single-header third-party code (dr_mp3); SYSTEM keeps its warnings
 # from tripping -Werror on our translation units.
 target_include_directories(evnova_runtime PRIVATE SYSTEM
@@ -149,7 +150,7 @@ if(EVNOVA_ENABLE_PCH)
     endif()
 endif()
 
-add_executable(evnova WIN32 main.cpp)
+add_executable(evnova WIN32 main.cpp game_update.cpp)
 target_link_libraries(evnova PRIVATE evnova_runtime)
 if(MSVC)
     target_compile_options(evnova PRIVATE /wd4244 /wd4267)

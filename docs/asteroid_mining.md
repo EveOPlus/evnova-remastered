@@ -66,3 +66,19 @@ folding. The radial controller selected the secondary itself, broke a
 mineral-bearing asteroid and its fragments, scooped 24 tons, and completed
 with no remaining group rocks or boxes. A separate silicate run completed
 with zero cargo, consistent with its resource definitions.
+
+## Automatic afterburner and early deployment
+
+Extra Prefs includes **Auto-flight uses afterburner**, enabled by default.
+Mining approaches, automatic docking (including Nearest Port), and jump-range departures boost only with an installed
+working afterburner and spare fuel beyond the remaining planned route (or one
+jump when no route is plotted). Boosting requires forward alignment. Mining
+uses a conservative braking envelope based on boosted speed and releases the
+burner before the final approach, aiming or scooping at close range.
+
+Auto-mining also requests the mining equipment's normal preparation animation
+during the approach, before it is in firing range. That request only advances
+the existing ship animation fields; it does not create shots, spend ammunition
+or bypass the normal animation cadence. The firing gates still require range,
+settled motion and an intersecting projectile trajectory. Steering cancels
+mining and its preparation request together.

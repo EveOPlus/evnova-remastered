@@ -27,8 +27,9 @@ private:
   NovaFontCache fonts_;
   NovaStarmap_MarkerIcons icons_;
   bool loaded_ = false;
-  enum class Drag { none, window, chart } drag_ = Drag::none;
+  enum class Drag { none, window, chart, resize } drag_ = Drag::none;
   SDL_FPoint last_pointer_{};
+  unsigned resize_edges_ = 0;
 };
 
 } // namespace game

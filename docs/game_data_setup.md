@@ -66,8 +66,8 @@ complete first-run setup-to-menu flow passed through the direct test driver
 with verified cached archives and an isolated profile; ARPIA2 was installed
 and left disabled by default.
 
-On 20 November 2026, Windows Security reported no threats in the ordinary
-player executable (SHA-256
+For `v0.1.0-preview.1`, Windows Security reported no threats on 20 November
+2026 in the ordinary player executable (SHA-256
 `93ded0c433dbcea577172e5ae4da0a93dc57f2e0db034e0f07d6a2acf120dac3`).
 The separate local test-driver build had been quarantined as
 `Trojan:Win32/Bearfoos.A!ml`. Its owner authorized an exact-file exclusion for

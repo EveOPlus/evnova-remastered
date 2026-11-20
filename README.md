@@ -22,7 +22,10 @@ ship, planet and interface designs. Upstream history and the original
 Download the Windows community preview from
 [Releases](https://github.com/EveOPlus/evnova-remastered/releases), or build
 the game using the [Windows guide](docs/local_windows_build.md).
-Extract the whole ZIP before starting the game.
+Extract the whole ZIP before starting the game. New Windows releases download
+automatically and install on the next launch; control this in Extra Prefs.
+The main-menu footer shows the version and build ID. See
+[automatic updates and versioning](docs/automatic_updates.md).
 
 Open `evnova.exe`. On a new installation, **Download and Set Up**
 fetches Community Edition and ARPIA2 from
@@ -52,7 +55,7 @@ Ambrosia Software, ATMOS or ARPIA2 release.
   market column and choose Auto Dock to fly there and land.
 - Save/Open Pilot file pickers, larger dialogs and consistent themed controls.
 - Optional [local mission and hail narration](docs/narration.md), with selectable
-  voices installed separately.
+  **Install voices** in Narration settings downloads all four voices and the runtime.
 - [ARPIA2 compatibility](docs/arpia2.md), with all three optional extras under
   one setting and separate campaign saves.
 - A [direct test driver](docs/windows_test_driver.md) for isolated testing.

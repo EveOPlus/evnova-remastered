@@ -1,0 +1,10 @@
+{
+  "python": {
+    "url": "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip",
+    "sha256": "009d6bf7e3b2ddca3d784fa09f90fe54336d5b60f0e0f305c37f400bf83cfd3b"
+  },
+  "pip": {
+    "url": "https://bootstrap.pypa.io/get-pip.py",
+    "sha256": "356e0d0de21cdc348c3394084d90939b85e4246c4d14c76aee6ca4f46646ea98"
+  }
+}

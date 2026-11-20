@@ -167,6 +167,8 @@ jobs:
         run: |
           powershell -NoProfile -File tools/test_setup_game_data.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          powershell -NoProfile -File tools/test_update_game.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s tools -p 'test_package_release.py'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python tools/package_release.py --output "dist/${{ matrix.package_name }}.zip"

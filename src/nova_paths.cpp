@@ -228,6 +228,11 @@ void NovaPaths::SetSupportDirectoryOverride(
   g_support_directory_cached_valid = false;
 }
 
+std::optional<std::filesystem::path> NovaPaths::SharedSupportDirectory() {
+  return g_campaign_settings_root ? g_campaign_settings_root
+                                  : SupportDirectory();
+}
+
 std::optional<std::filesystem::path>
 NovaPaths::SupportSubdirectory(std::string_view name) {
   const auto support = SupportDirectory();

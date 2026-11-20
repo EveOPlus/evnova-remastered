@@ -745,3 +745,30 @@ TEST_CASE("effect layer levels are capped at 32 - fog * 1.5", "[ship_visual]") {
 }
 
 } // namespace game
+
+TEST_CASE("mining preparation runs the opening animation without firing") {
+  using namespace game;
+  GameState state;
+  state.scenario.ships.resize(1);
+  auto &cls = state.scenario.ships[0];
+  cls.base_armor = 100;
+  cls.sprite_behavior_flags = 0x82;
+  cls.base_set_count = 6;
+  cls.animation_cycle_count = 6;
+  cls.combat_state_init_range = 1;
+  state.player.ship_class_id = 0;
+  state.player.armor_points = 100;
+  state.player.is_active = true;
+  state.player.waypoint_arrival_marker_b = 5;
+  state.scenario.weapons.resize(1);
+  state.scenario.weapons[0].flags_secondary = 0x8000;
+  state.player.weapon_banks[0].mounted = 1;
+  for (int i = 0; i < 30; ++i) {
+    state.tick_60hz += 2;
+    NovaWeapon_PrepareMiningAnimation(state, 0);
+    NovaShip_TickSpriteAnimation(state, state.player, 1);
+    CHECK(state.active_shots.empty());
+  }
+  CHECK(state.player.waypoint_arrival_marker_b == 0);
+  CHECK(state.player.weapon_banks[0].mounted == 1);
+}

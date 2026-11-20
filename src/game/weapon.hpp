@@ -288,6 +288,9 @@ void NovaWeapon_SpawnLinkedShotsOnImpact(
 void NovaWeapon_FirePlayerWeaponBank(GameState &state,
                                      std::int16_t weapon_bank);
 
+// Community automation: run only the mining weapon's preparation animation.
+void NovaWeapon_PrepareMiningAnimation(GameState &state, std::int16_t bank);
+
 // PlayerTick_WeaponCommands (synthetic entry 0x0044BEB7) +
 // PlayerTick_WeaponCycleContinuation
 // (0x0044EAB4) of Ship_HandlePlayerShipCore (0x0044aa70): the player's weapon

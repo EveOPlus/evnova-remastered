@@ -202,6 +202,61 @@ InterceptTicks(float dx, float dy, float vx, float vy, float speed) {
   return static_cast<float>(result);
 }
 
+struct AutomationMotionStats {
+  float turn, thrust, speed;
+};
+
+AutomationMotionStats MotionStats(const GameState &state) {
+  const auto stats = state.stat_cache_valid
+                         ? state.cached_stats
+                         : Outfit_ComputePlayerEffectiveStats(state);
+  const float ionization =
+      state.player.ionization_points > 0
+          ? (state.cached_ionization_capacity < 0
+                 ? .7F
+                 : std::min(.7F,
+                            NovaOutfit_NormalizeIonizationIntensity(
+                                state.player.ionization_points,
+                                state.cached_ionization_capacity)))
+          : 0.0F;
+  const float turn = std::round(stats.turn_raw * .1F * (1.0F - ionization));
+  const float thrust = stats.thrust_raw * .0002F * (1.0F - ionization);
+  const float speed = stats.speed_raw * .01F;
+  return {turn, thrust, speed};
+}
+
+bool AutomaticBoostAvailable(const GameState &state, float elapsed_ticks) {
+  if (!state.automatic_afterburner ||
+      !Outfit_HasPlayerOwnedAfterburner(state) ||
+      NovaAiShip_IsDisabled(state, state.player) || state.travel.engaging ||
+      state.player.hyperspace_jump_timer > 0)
+    return false;
+  std::size_t hops = 0;
+  bool found_current = false;
+  for (const auto system : state.travel.starmap_route) {
+    if (system < 0)
+      break;
+    if (found_current)
+      ++hops;
+    if (system == state.player.current_system_id)
+      found_current = true;
+  }
+  const float reserve =
+      static_cast<float>(std::max(std::size_t{1}, hops)) * kJumpFuelCost;
+  const float burn =
+      std::max(0.0F, Outfit_GetPlayerAfterburnerFuelBurnRate(state));
+  return state.player.fuel_points >=
+         reserve + burn * (elapsed_ticks + 2) + 1.0F;
+}
+
+void BoostDeparture(const GameState &state,
+                    float elapsed_ticks,
+                    FlightInput &input) {
+  if (input.thrust && !input.turn_left && !input.turn_right &&
+      AutomaticBoostAvailable(state, elapsed_ticks))
+    input.afterburner = true;
+}
+
 void ApproachMiningTarget(const PlayerShip &ship,
                           float x,
                           float y,
@@ -213,6 +268,7 @@ void ApproachMiningTarget(const PlayerShip &ship,
                           float speed,
                           float elapsed_ticks,
                           bool &final_approach,
+                          bool boost_available,
                           FlightInput &input) {
   const float dx = x - ship.pos_x;
   const float dy = y - ship.pos_y;
@@ -232,7 +288,15 @@ void ApproachMiningTarget(const PlayerShip &ship,
     final_approach = false;
   if (distance <= radius + braking + relative_speed * elapsed_ticks + 15.0F)
     final_approach = true;
+  const float boost_relative_speed = speed * 1.8F + std::hypot(vx, vy);
+  const float boost_braking =
+      boost_relative_speed * kPi / omega +
+      boost_relative_speed * boost_relative_speed / (2 * acceleration);
+  const bool boost = boost_available && !final_approach &&
+                     distance > radius + boost_braking + 80.0F;
   if (!final_approach && speed > .1F) {
+    if (boost)
+      speed *= 1.8F;
     // Account for coasting during the initial turn, then accelerate onto a
     // world-space intercept course. Do not add target velocity a second time.
     const float delay =
@@ -251,6 +315,8 @@ void ApproachMiningTarget(const PlayerShip &ship,
         if (std::abs(AngleDelta(ship.heading, desired)) <=
             (turn * elapsed_ticks + 2.0F) * kDegToRad)
           input.thrust = true;
+        input.afterburner =
+            boost && input.thrust && !input.turn_left && !input.turn_right;
       }
       return;
     }
@@ -443,6 +509,30 @@ bool FlightAutomationController::FollowingRoute() const {
           status_.phase == FlightAutomationPhase::kWaiting);
 }
 
+void FlightAutomationController::NavigationChanged(const GameState &state,
+                                                   std::uint64_t now_ms) {
+  if (state.travel.engaging || state.player.hyperspace_jump_timer > 0 ||
+      status_.phase == FlightAutomationPhase::kIdle ||
+      status_.phase == FlightAutomationPhase::kComplete ||
+      status_.phase == FlightAutomationPhase::kFailed ||
+      status_.phase == FlightAutomationPhase::kCancelled)
+    return;
+  if (FollowingRoute() && NovaStarmap_RouteHasHops(state)) {
+    (void)FollowRoute(state, now_ms);
+    return;
+  }
+  if (!FollowingRoute() && status_.goal != FlightAutomationGoal::kJumpTo)
+    return;
+  const auto destination = state.travel.starmap_destination_system_id;
+  if (destination < 0 ||
+      static_cast<std::size_t>(destination) >= state.scenario.systems.size())
+    return;
+  (void)JumpTo(
+      state,
+      state.scenario.systems[static_cast<std::size_t>(destination)].name,
+      now_ms);
+}
+
 bool FlightAutomationController::FollowRoute(const GameState &state,
                                              std::uint64_t now_ms) {
   if (!NovaStarmap_RouteHasHops(state))
@@ -535,6 +625,7 @@ void FlightAutomationController::TickRoute(const GameState &state,
                  cls ? std::round(cls->turn_rate * 0.1F) : 1.0F,
                  input,
                  elapsed_ticks);
+    BoostDeparture(state, elapsed_ticks, input);
     status_.phase = FlightAutomationPhase::kMove;
     return;
   }
@@ -626,21 +717,8 @@ void FlightAutomationController::TickMining(const GameState &state,
     Fail("Auto-mine stopped: no asteroid scoop.");
     return;
   }
-  const auto stats = state.stat_cache_valid
-                         ? state.cached_stats
-                         : Outfit_ComputePlayerEffectiveStats(state);
-  const float ionization =
-      state.player.ionization_points > 0
-          ? (state.cached_ionization_capacity < 0
-                 ? .7F
-                 : std::min(.7F,
-                            NovaOutfit_NormalizeIonizationIntensity(
-                                state.player.ionization_points,
-                                state.cached_ionization_capacity)))
-          : 0.0F;
-  const float turn = std::round(stats.turn_raw * .1F * (1.0F - ionization));
-  const float thrust = stats.thrust_raw * .0002F * (1.0F - ionization);
-  const float speed = stats.speed_raw * .01F;
+  const auto stats = MotionStats(state);
+  const float turn = stats.turn, thrust = stats.thrust, speed = stats.speed;
   const auto approach =
       [&](int key, float x, float y, float vx, float vy, float radius) {
         if (key != mining_target_key_) {
@@ -658,6 +736,7 @@ void FlightAutomationController::TickMining(const GameState &state,
                              speed,
                              elapsed_ticks,
                              mining_final_approach_,
+                             AutomaticBoostAvailable(state, elapsed_ticks),
                              input);
       };
   // Collect existing yield first: it expires, whereas the remaining fragments
@@ -731,6 +810,7 @@ void FlightAutomationController::TickMining(const GameState &state,
   const float reach = weapon->weapon_mode_code == 0
                           ? static_cast<float>(weapon->beam_length_px)
                           : weapon->range_scalar;
+  input.prepare_mining_bank = mining_bank_;
   // Break rocks close to the scoop so their short-lived yield can be reached.
   const float firing_distance = std::min(65.0F, reach * .75F);
   status_.phase = FlightAutomationPhase::kMove;
@@ -1011,6 +1091,7 @@ void FlightAutomationController::Tick(const GameState &state,
           static_cast<std::int16_t>(state.player.ship_class_id + 0x80));
       const float turn = cls ? std::round(cls->turn_rate * 0.1F) : 1.0F;
       MoveAwayFrom(state.player, 0.0F, 0.0F, turn, input, elapsed_ticks);
+      BoostDeparture(state, elapsed_ticks, input);
       return;
     }
     status_.phase = FlightAutomationPhase::kEngage;
@@ -1031,10 +1112,8 @@ void FlightAutomationController::Tick(const GameState &state,
     Fail("landing destination disappeared");
     return;
   }
-  const ShipClass *cls = state.scenario.Ship(
-      static_cast<std::int16_t>(state.player.ship_class_id + 0x80));
-  const float turn = cls ? std::round(cls->turn_rate * 0.1F) : 1.0F;
-  const float thrust = cls ? cls->accel / 10000.0F * 2.0F : 0.01F;
+  const auto stats = MotionStats(state);
+  const float turn = stats.turn, thrust = stats.thrust;
   const float envelope = landing_envelope_axis_range_ > 0.0F
                              ? landing_envelope_axis_range_
                              : kDefaultLandingEnvelope;
@@ -1064,6 +1143,15 @@ void FlightAutomationController::Tick(const GameState &state,
                   thrust,
                   input,
                   elapsed_ticks);
+  const float boosted_speed = std::max(
+      stats.speed * 1.8F, std::hypot(state.player.vel_x, state.player.vel_y));
+  const float braking =
+      boosted_speed * kPi / (std::max(1.0F, turn) * kDegToRad) +
+      boosted_speed * boosted_speed / (2 * std::max(.001F, thrust));
+  if (std::hypot(dx, dy) > envelope + braking + 80.0F &&
+      std::abs(AngleDelta(state.player.heading, Bearing(dx, dy))) <
+          5 * kDegToRad)
+    BoostDeparture(state, elapsed_ticks, input);
 }
 
 void FlightAutomationController::TickDestroy(const GameState &state,
