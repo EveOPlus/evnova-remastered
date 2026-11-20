@@ -1,6 +1,7 @@
 # Credits and provenance
 
-EV Nova Remastered is a community fork, maintained under **EveOPlus**. It builds
+EV Nova Community Remaster is an unofficial community fork, maintained under
+**EveOPlus**. It builds
 on other people's engine reconstruction, original game, tools and artwork.
 The names below acknowledge their work; they do not imply endorsement.
 
@@ -16,9 +17,16 @@ from that project, not work newly created for this fork.
 
 EveOPlus's additions include modern mouse controls, radial actions, navigation
 assistance, market comparison, local narration integration, ARPIA2 compatibility,
-Windows packaging and remastered presentation. Development has used OpenAI
-Codex assistance. Both this fork and the upstream project use AI-assisted work;
-behavioral checks do not establish complete original-game fidelity.
+Windows packaging and remastered presentation.
+
+## AI tooling disclosure
+
+This fork is developed using AI tooling, including **OpenAI Codex**, for code
+generation and modification, investigation, documentation, and test execution.
+Both this fork and the upstream project use AI-assisted work. These tools do
+not replace attribution to the original game creators, upstream engine authors,
+or other contributors. Behavioral checks do not establish complete
+original-game fidelity.
 
 ## Escape Velocity Nova
 

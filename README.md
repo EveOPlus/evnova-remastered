@@ -1,4 +1,12 @@
-# EV Nova Remastered
+# EV Nova Community Remaster
+
+**Unofficial community project.** This project is not affiliated with or
+endorsed by Ambrosia Software, ATMOS, or the original EV Nova and ARPIA2 creators.
+
+**Built with AI tooling.** This fork is developed using AI tools, including
+OpenAI Codex, to help write and modify code, investigate game behavior, create
+documentation, and run tests. The original game, upstream engine, and community
+contributions remain credited to their respective authors.
 
 An unofficial community fork of [wraitii/evnova-decomp](https://github.com/wraitii/evnova-decomp),
 **Lancelot de Ferrière's C++23/SDL3 reimplementation of Escape Velocity Nova**.
@@ -59,8 +67,8 @@ unit checks and isolated driver scenarios. A full playthrough of every stock
 or ARPIA2 storyline has not been verified. Original timing, AI and other
 fidelity gaps remain documented in the source and progress trackers.
 
-Development uses AI assistance, including OpenAI Codex. Claims about testing
-apply only to the checks actually performed, not complete behavioral parity.
+Claims about testing apply only to the checks actually performed, not complete
+behavioral parity.
 
 ## Source and data licenses
 
