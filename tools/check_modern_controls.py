@@ -75,12 +75,32 @@ def check() -> None:
         d.mouse(x, y, button="left", down=False)
         released = d.state()
         d.mouse(40, 40)
-        time.sleep(1.5)
-        coasting = d.state()
-        assert math.hypot(coasting['vel_x'], coasting['vel_y']) > math.hypot(released['vel_x'], released['vel_y']) * .9
-        assert abs(coasting['heading'] - moving['heading']) < .1
-        assert math.hypot(coasting['pos_x'] - released['pos_x'], coasting['pos_y'] - released['pos_y']) > 20
-        passed("release coasts without turning or braking", before=released, after=coasting)
+        stopped = wait_for(d.state, lambda s: math.hypot(s['vel_x'], s['vel_y']) < .001)
+        assert abs(stopped['heading'] - moving['heading']) < .1
+        time.sleep(.3)
+        assert math.hypot(d.state()['vel_x'], d.state()['vel_y']) < .001
+        passed("release brakes to a stop without turning or reversing", before=released, after=stopped)
+
+        # Hold the second click: cruise must survive both that hold and release.
+        for down in [True, False, True]:
+            d.mouse(x, y, button="left", down=down)
+            time.sleep(.08)
+        cap = d.state("player")["effective_max_speed"]
+        cruising = wait_for(d.state, lambda s: s['speed'] >= cap * .99)
+        d.mouse(x, y, button="left", down=False)
+        d.mouse(40, 40)
+        time.sleep(.8)
+        released_cruise = d.state()
+        assert released_cruise['speed'] >= cap * .99
+        assert abs(released_cruise['heading'] - cruising['heading']) < .1
+        passed("double-click-and-hold cruise keeps speed on release", before=cruising, after=released_cruise)
+
+        # A new single hold returns to release-to-stop, even after cruise.
+        d.mouse(x, y, button="left", down=True)
+        time.sleep(.6)
+        d.mouse(x, y, button="left", down=False)
+        wait_for(d.state, lambda s: math.hypot(s['vel_x'], s['vel_y']) < .001)
+        passed("new single hold restores release braking after cruise")
 
         d.hold(['Up'])
         wait_for(d.state, lambda s: s['vel_x'] > 2)

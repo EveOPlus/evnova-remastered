@@ -6,8 +6,8 @@ Original keyboard bindings still work.
 | Control | Action |
 | --- | --- |
 | Hold left mouse in space | Turn toward the cursor and thrust once aligned |
-| Release a left-mouse hold | Stop mouse steering/thrust and coast |
-| Double-click empty space | Turn that way and cruise at normal full speed without braking |
+| Release a left-mouse hold | Brake smoothly to a stop |
+| Double-click or double-click-and-hold empty space | Turn that way and cruise at normal full speed without braking |
 | Hold right mouse over a ship | Target, hail, or board it |
 | Hold right mouse over a planet/station | Target, hail, or automatically approach and dock |
 | Hold right mouse over empty space | Galaxy map, missions, or automatically dock at the nearest port |
@@ -51,19 +51,21 @@ boarding alignment and range, fuel and equipment requirements still apply.
 
 Two left presses within 500 ms and 12 screen pixels start cruise. The second
 press locks the direction relative to the ship; moving the pointer afterwards
-does not change it. A fresh hold or keyboard steering takes control again.
+does not change it. Holding the second press keeps cruise active, and releasing
+it does not brake. A fresh single hold restores release braking; keyboard
+steering takes control again.
 Cruise uses normal thrust and top speed, without automatically using afterburner.
 Hold Z to use an installed afterburner. With Safe bug fixes enabled (the default),
 inertialess ships can reach the same 1.8x boosted maximum while holding Up or
 mouse steering as they can with Z alone. Turning Safe bug fixes off restores
 the original conflicting thrust clamp. Normal fuel and gravity limits apply.
 
-Releasing a mouse flight hold stops the mouse steering and thrust inputs and
-lets the ship coast under its normal physics, including when released over a
-HUD or floating panel. It does not apply a braking assist. This applies to both
-ordinary and inertialess ships and leaves the pointer free for combat targeting.
-A fresh hold resumes steering. Automatic docking, boarding, mining and jump
-preparation still perform their own braking.
+Releasing a normal mouse flight hold applies a braking assist until the ship
+stops, including when released over a HUD or floating panel. It slows along the
+velocity vector without turning or reversing, on both ordinary and inertialess
+ships. A fresh hold resumes steering. Keyboard flight, cruise, and automatic
+docking, boarding, mining or jumping take over from the assist. Releasing
+keyboard thrust alone still coasts under the ship's normal physics.
 
 For a Vell-os Dart, Down reduces speed to zero without turning or flying
 backward. Releasing Up alone does not normally brake it: the original Windows

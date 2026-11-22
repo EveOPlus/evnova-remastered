@@ -118,7 +118,7 @@ void MouseFlightControl::Update(const FlightInput &input,
                       input.reverse || input.afterburner || input.face_target ||
                       input.travel || input.land || input.board;
   if (manual) {
-    cruising_ = click_pending_ = false;
+    cruising_ = braking_ = click_pending_ = false;
   }
   if (input.primary_clicked) {
     if (!can_start) {
@@ -139,11 +139,27 @@ void MouseFlightControl::Update(const FlightInput &input,
       if (cruising_)
         cruise_direction_ = direction;
       steering_ = !cruising_ && input.primary_held;
+      braking_ = false;
     }
   }
   if (steering_ && !input.primary_held) {
     steering_ = false;
+    braking_ = true;
   }
+  if (manual)
+    braking_ = false;
+}
+
+void ApplyMouseBraking(Ship &ship, float deceleration, float elapsed_ticks) {
+  const float speed = std::hypot(ship.vel_x, ship.vel_y);
+  const float step = deceleration * elapsed_ticks;
+  if (!std::isfinite(speed) || !std::isfinite(step) || step <= 0.0F)
+    return;
+  const float scale = speed > step ? (speed - step) / speed : 0.0F;
+  ship.vel_x *= scale;
+  ship.vel_y *= scale;
+  // Inertialess hulls maintain scalar speed independently of velocity.
+  ship.speed = std::max(0.0F, ship.speed - step);
 }
 
 bool ApplyMouseSteering(float heading,

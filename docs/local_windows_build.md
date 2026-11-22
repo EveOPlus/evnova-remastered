@@ -66,8 +66,8 @@ data relative to its own executable, so it also works when launched elsewhere.
 
 The window opens maximized; F11 switches fullscreen. Mouse-wheel zoom expands
 the visible world independently of HUD size. Hold left mouse to steer and fly;
-release to coast. Hold right mouse for ship, port, or flight
-actions and release over a wedge to select it. See [modern_controls.md](modern_controls.md).
+release to brake. Double-click-and-hold starts cruise without release braking.
+Hold right mouse for ship, port, or flight actions and release over a wedge to select it. See [modern_controls.md](modern_controls.md).
 
 Build with `-TestDriver` for the separate localhost-controlled test executable.
 It uses an isolated test profile and can run headless. The normal packaged

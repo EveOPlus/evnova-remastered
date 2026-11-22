@@ -2774,6 +2774,19 @@ void NovaFrame_SpaceflightLoop(SdlPlatform &platform,
       // region. A newly engaged jump therefore owns this frame immediately;
       // normal steering must not contribute one final integration step.
       if (!player_tick_consumed && !state.travel.engaging) {
+        // Community mouse-release assist; cruise and keyboard flight opt out.
+        if (mouse_control.braking() &&
+            state.player.hyperspace_jump_timer <= 0.0F &&
+            !NovaAiShip_IsDisabled(state, state.player)) {
+          const auto stats = state.stat_cache_valid
+                                 ? state.cached_stats
+                                 : Outfit_ComputePlayerEffectiveStats(state);
+          const float ionization = std::min(
+              0.7F, NovaOutfit_GetIonizationIntensity(state, state.player));
+          ApplyMouseBraking(state.player,
+                            stats.thrust_raw * 0.0002F * (1.0F - ionization),
+                            frame_time_ms / kOriginalTickMs);
+        }
         PlayerTick_ManualFlightAndRegeneration(
             state, input, frame_time_ms / kOriginalTickMs, face_target_armed);
       } else if (!timed_action_active && state.player.is_active &&

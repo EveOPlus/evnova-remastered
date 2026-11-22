@@ -19,10 +19,15 @@ TEST_CASE("Double-click cruise keeps its heading and does not brake on release",
   input.window_mouse_y = 200;
   control.Update(input, true, true, 100, {100, -200});
   control.Update({}, true, true, 150);
+  input.primary_held = true; // Hold the second click, then release it.
   control.Update(input, true, true, 250, {100, -200});
   REQUIRE(control.cruising());
+  input.primary_clicked = false;
+  control.Update(input, true, true, 600, {-200, 0});
+  REQUIRE_FALSE(control.braking());
   control.Update({}, false, true, 800, {-200, 0}); // Pointer over the HUD.
   CHECK(control.steering());
+  CHECK_FALSE(control.braking());
   CHECK(control.Direction({-200, 0}).x == 100);
   CHECK(control.Direction({-200, 0}).y == -200);
   SECTION("keyboard takes over") {
@@ -30,13 +35,16 @@ TEST_CASE("Double-click cruise keeps its heading and does not brake on release",
     input.reverse = true;
     control.Update(input, true, true, 900);
     CHECK_FALSE(control.cruising());
+    CHECK_FALSE(control.braking());
   }
-  SECTION("new hold replaces cruise and release ends steering") {
+  SECTION("new hold restores release braking") {
+    input.primary_clicked = true;
     input.primary_held = true;
     control.Update(input, true, true, 900, {-200, 0});
     CHECK_FALSE(control.cruising());
     control.Update({}, true, true, 950);
     CHECK_FALSE(control.steering());
+    CHECK(control.braking());
   }
   SECTION("jump or disability stops cruise") {
     control.Update({}, true, false, 900);
@@ -61,13 +69,12 @@ TEST_CASE("Cruise ignores slow clicks, separated clicks, UI and the center",
   CHECK_FALSE(control.cruising());
 }
 
-TEST_CASE("mouse release coasts with ordinary and inertialess physics",
-          "[mouse]") {
+TEST_CASE("mouse release stops ordinary and inertialess ships", "[mouse]") {
   game::MouseFlightControl control;
   game::PlayerShip ship;
   game::ShipClass cls;
   cls.accel = 1250;
-  cls.speed = 600;
+  cls.speed = 900; // Dart's effective non-Strict speed, in integrator units.
   cls.turn_rate = 100;
   game::PlayerMovementOptions opts;
   SECTION("ordinary ship") { opts.inertialess = false; }
@@ -83,21 +90,20 @@ TEST_CASE("mouse release coasts with ordinary and inertialess physics",
     (void)game::NovaPlayer_IntegrateMovement(ship, input, cls, 0.63F, opts);
   }
   REQUIRE(ship.vel_y < -1);
-  const float speed = ship.speed;
-  const float velocity = ship.vel_y;
-  const float position = ship.pos_y;
-  // Releasing over a HUD/panel must end the hold without adding any input.
+  // Releasing over a HUD/panel must still brake the flight hold.
   control.Update({}, false, true, 2000);
   REQUIRE_FALSE(control.steering());
   REQUIRE_FALSE(control.cruising());
+  REQUIRE(control.braking());
   for (int frame = 0; frame < 150; ++frame) {
     control.Update({}, true, true, 2100 + frame * 21);
     REQUIRE_FALSE(control.steering());
+    game::ApplyMouseBraking(ship, cls.accel * 0.0002F, 0.63F);
     (void)game::NovaPlayer_IntegrateMovement(ship, {}, cls, 0.63F, opts);
+    REQUIRE(ship.vel_y <= 0);
   }
-  CHECK(ship.speed == speed);
-  CHECK(ship.vel_y == velocity);
-  CHECK(ship.pos_y < position - 100);
+  CHECK(ship.speed == 0);
+  CHECK(ship.vel_y == 0);
   CHECK(ship.heading == 0);
 
   input = {};
@@ -105,8 +111,54 @@ TEST_CASE("mouse release coasts with ordinary and inertialess physics",
   control.Update(input, true, true, 6000, {200, 0});
   CHECK(control.steering());
   CHECK_FALSE(control.cruising());
+  CHECK_FALSE(control.braking());
   control.Update({}, true, false, 6100);
   CHECK_FALSE(control.steering());
+  CHECK_FALSE(control.braking());
+}
+
+TEST_CASE("keyboard and flight actions cancel mouse braking", "[mouse]") {
+  game::MouseFlightControl control;
+  FlightInput input;
+  input.primary_clicked = input.primary_held = true;
+  control.Update(input, true, true, 100, {0, -200});
+  control.Update({}, true, true, 200);
+  REQUIRE(control.braking());
+  input = {};
+  SECTION("turn") { input.turn_left = true; }
+  SECTION("thrust") { input.thrust = true; }
+  SECTION("reverse") { input.reverse = true; }
+  SECTION("boost") { input.afterburner = true; }
+  SECTION("face target") { input.face_target = true; }
+  SECTION("jump") { input.travel = true; }
+  SECTION("land") { input.land = true; }
+  SECTION("board") { input.board = true; }
+  control.Update(input, true, true, 300);
+  CHECK_FALSE(control.braking());
+  control.Update({}, true, true, 400);
+  CHECK_FALSE(control.braking());
+}
+
+TEST_CASE("mouse braking keeps direction and scales with elapsed time",
+          "[mouse]") {
+  game::Ship ship;
+  ship.vel_x = 3;
+  ship.vel_y = 4;
+  ship.speed = 5;
+  ship.heading = 1;
+  auto split = ship;
+  game::ApplyMouseBraking(ship, 0.5F, 3);
+  for (int i = 0; i < 3; ++i)
+    game::ApplyMouseBraking(split, 0.5F, 1);
+  CHECK(std::abs(ship.vel_x - split.vel_x) < 0.0001F);
+  CHECK(std::abs(ship.vel_y - split.vel_y) < 0.0001F);
+  CHECK(ship.speed == split.speed);
+  CHECK(std::abs(ship.vel_x / ship.vel_y - 0.75F) < 0.0001F);
+  CHECK(ship.heading == 1);
+  game::ApplyMouseBraking(ship, 2, 3);
+  CHECK(ship.vel_x == 0);
+  CHECK(ship.vel_y == 0);
+  CHECK(ship.speed == 0);
 }
 
 TEST_CASE("HUD clicks and quick taps do not start mouse flight", "[mouse]") {
@@ -116,9 +168,11 @@ TEST_CASE("HUD clicks and quick taps do not start mouse flight", "[mouse]") {
   control.Update(input, false, true);
   control.Update({}, true, true);
   CHECK_FALSE(control.steering());
+  CHECK_FALSE(control.braking());
   input.primary_held = false;
   control.Update(input, true, true);
   CHECK_FALSE(control.steering());
+  CHECK_FALSE(control.braking());
 }
 
 TEST_CASE("mouse flight turns toward the pointer before applying thrust",

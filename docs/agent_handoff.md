@@ -66,8 +66,9 @@ re-enabling it required no source patch or replacement executable.
 
 ## Community behaviors to preserve
 
-- Hold left mouse to steer; release coasts. Double-click space locks a cruise
-  direction at normal full speed. A new hold or keyboard steering takes over.
+- Hold left mouse to steer; release brakes to a stop. Double-click space locks
+  a cruise direction at normal full speed, including when holding the second click;
+  releasing cruise does not brake. A new hold or keyboard steering takes over.
 - Right-button hold opens the contextual radial; release selects or cancels.
   Disabled players retain menu access, subject to normal movement restrictions.
 - J once jumps once, flying clear first if necessary without opening the map.
